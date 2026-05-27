@@ -3803,6 +3803,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
+	body = ensureOpenAIResponsesAISDKCompatibility(body)
 	c.Data(resp.StatusCode, contentType, body)
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
@@ -3840,6 +3841,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		}
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
+		body = ensureOpenAIResponsesAISDKCompatibility(body)
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
@@ -4927,6 +4929,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
+	body = ensureOpenAIResponsesAISDKCompatibility(body)
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
@@ -4977,6 +4980,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		}
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
+		body = ensureOpenAIResponsesAISDKCompatibility(body)
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
@@ -5078,6 +5082,118 @@ func extractCodexFinalResponse(body string) ([]byte, bool) {
 		return finalResponse, true
 	}
 	return nil, false
+}
+
+// ensureOpenAIResponsesAISDKCompatibility fills optional-but-commonly-present
+// Responses fields that the Vercel AI SDK validates as required.
+func ensureOpenAIResponsesAISDKCompatibility(body []byte) []byte {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return body
+	}
+	output := gjson.GetBytes(body, "output")
+	if !output.IsArray() {
+		return body
+	}
+
+	patched := body
+	responseID := sanitizeGeneratedResponsePartID(gjson.GetBytes(body, "id").String())
+	if responseID == "" {
+		responseID = "resp"
+	}
+	for i, item := range output.Array() {
+		if !item.IsObject() {
+			continue
+		}
+		basePath := fmt.Sprintf("output.%d", i)
+		itemType := item.Get("type").String()
+
+		if openAIResponsesOutputItemNeedsID(itemType) && strings.TrimSpace(item.Get("id").String()) == "" {
+			if next, err := sjson.SetBytes(patched, basePath+".id", fmt.Sprintf("%s_%s_%d", openAIResponsesOutputItemIDPrefix(itemType), responseID, i)); err == nil {
+				patched = next
+			}
+		}
+
+		if itemType == "reasoning" && !item.Get("summary").Exists() {
+			if next, err := sjson.SetRawBytes(patched, basePath+".summary", []byte("[]")); err == nil {
+				patched = next
+			}
+		}
+
+		if itemType != "message" {
+			continue
+		}
+		content := item.Get("content")
+		if !content.IsArray() {
+			continue
+		}
+		for j, part := range content.Array() {
+			if part.Get("type").String() != "output_text" {
+				continue
+			}
+			annotations := part.Get("annotations")
+			if annotations.Exists() && annotations.IsArray() {
+				continue
+			}
+			partPath := fmt.Sprintf("%s.content.%d.annotations", basePath, j)
+			if next, err := sjson.SetRawBytes(patched, partPath, []byte("[]")); err == nil {
+				patched = next
+			}
+		}
+	}
+	return patched
+}
+
+func openAIResponsesOutputItemNeedsID(itemType string) bool {
+	switch itemType {
+	case "message",
+		"reasoning",
+		"function_call",
+		"custom_tool_call",
+		"web_search_call",
+		"file_search_call",
+		"image_generation_call",
+		"code_interpreter_call",
+		"local_shell_call",
+		"computer_call",
+		"mcp_call",
+		"mcp_list_tools",
+		"mcp_approval_request",
+		"apply_patch_call",
+		"shell_call",
+		"shell_call_output",
+		"tool_search_call",
+		"tool_search_output":
+		return true
+	default:
+		return false
+	}
+}
+
+func openAIResponsesOutputItemIDPrefix(itemType string) string {
+	switch itemType {
+	case "message":
+		return "msg"
+	case "reasoning":
+		return "rs"
+	case "function_call", "custom_tool_call":
+		return "fc"
+	default:
+		return "item"
+	}
+}
+
+func sanitizeGeneratedResponsePartID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			_, _ = b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // reconstructResponseOutputFromSSE scans raw SSE body text for delta events and

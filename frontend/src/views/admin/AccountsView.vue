@@ -273,13 +273,35 @@
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
-          <template #cell-usage="{ row }">
-            <AccountUsageCell
-              :account="row"
-              :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
-              :today-stats-loading="todayStatsLoading"
-              :manual-refresh-token="usageManualRefreshToken"
-            />
+          <template #cell-quota_5h_remaining="{ row }">
+            <div
+              v-if="getOpenAIQuotaRemainingPercent(row, '5h') !== null"
+              class="flex flex-col items-center gap-1"
+              :title="formatQuotaRemainingTitle(row, '5h')"
+            >
+              <span :class="getQuotaRemainingClass(getOpenAIQuotaRemainingPercent(row, '5h'))">
+                {{ formatQuotaRemainingPercent(getOpenAIQuotaRemainingPercent(row, '5h')) }}
+              </span>
+              <span class="whitespace-nowrap text-[10px] leading-3 text-gray-500 dark:text-dark-400">
+                {{ t('admin.accounts.quotaRefreshAt') }} {{ formatQuotaResetTime(row, '5h') }}
+              </span>
+            </div>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+          <template #cell-quota_7d_remaining="{ row }">
+            <div
+              v-if="getOpenAIQuotaRemainingPercent(row, '7d') !== null"
+              class="flex flex-col items-center gap-1"
+              :title="formatQuotaRemainingTitle(row, '7d')"
+            >
+              <span :class="getQuotaRemainingClass(getOpenAIQuotaRemainingPercent(row, '7d'))">
+                {{ formatQuotaRemainingPercent(getOpenAIQuotaRemainingPercent(row, '7d')) }}
+              </span>
+              <span class="whitespace-nowrap text-[10px] leading-3 text-gray-500 dark:text-dark-400">
+                {{ t('admin.accounts.quotaRefreshAt') }} {{ formatQuotaResetTime(row, '7d') }}
+              </span>
+            </div>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
           <template #cell-proxy="{ row }">
             <div v-if="row.proxy" class="flex items-center gap-2">
@@ -400,8 +422,8 @@ import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
+import type { Column } from '@/components/common/types'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
-import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
@@ -547,7 +569,6 @@ const todayStatsLoading = ref(false)
 const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
-const usageManualRefreshToken = ref(0)
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -558,11 +579,7 @@ const buildDefaultTodayStats = (): WindowStats => ({
 })
 
 const refreshTodayStatsBatch = async () => {
-  // Why this checks both columns:
-  // - today_stats column shows dedicated today's metrics.
-  // - usage column also embeds today's stats for Key/Bedrock rows.
-  // So we only skip fetching when BOTH columns are hidden.
-  if (hiddenColumns.has('today_stats') && hiddenColumns.has('usage')) {
+  if (hiddenColumns.has('today_stats')) {
     todayStatsLoading.value = false
     todayStatsError.value = null
     return
@@ -700,7 +717,7 @@ const toggleColumn = (key: string) => {
     hiddenColumns.add(key)
   }
   saveColumnsToStorage()
-  if ((key === 'today_stats' || key === 'usage') && wasHidden) {
+  if (key === 'today_stats' && wasHidden) {
     refreshTodayStatsBatch().catch((error) => {
       console.error('Failed to load account today stats after showing column:', error)
     })
@@ -959,8 +976,6 @@ const refreshAccountsIncrementally = async () => {
 
 const handleManualRefresh = async () => {
   await load()
-  // Force usage cells to refetch /usage on explicit user refresh.
-  usageManualRefreshToken.value += 1
 }
 
 const closeAccountToolsDropdown = () => {
@@ -995,8 +1010,6 @@ const openTLSFingerprintProfiles = () => {
 const syncPendingListChanges = async () => {
   hasPendingListSync.value = false
   await load()
-  // Keep behavior consistent with manual refresh.
-  usageManualRefreshToken.value += 1
 }
 
 const { pause: pauseAutoRefresh, resume: resumeAutoRefresh } = useIntervalFn(
@@ -1107,9 +1120,88 @@ function getAntigravityTierClass(row: any): string {
   }
 }
 
+type OpenAIQuotaWindow = '5h' | '7d'
+
+function readAccountExtraNumber(account: Account, key: string): number | null {
+  const extra = account.extra as Record<string, unknown> | undefined
+  const value = extra?.[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function readAccountExtraString(account: Account, key: string): string {
+  const extra = account.extra as Record<string, unknown> | undefined
+  const value = extra?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, value))
+}
+
+function isQuotaWindowReset(account: Account, window: OpenAIQuotaWindow): boolean {
+  const resetAt = readAccountExtraString(account, `codex_${window}_reset_at`)
+  if (!resetAt) return false
+  const timestamp = Date.parse(resetAt)
+  return Number.isFinite(timestamp) && timestamp <= Date.now()
+}
+
+function getOpenAIQuotaRemainingPercent(account: Account, window: OpenAIQuotaWindow): number | null {
+  if (account.platform !== 'openai' || account.type !== 'oauth') return null
+  const usedPercent = readAccountExtraNumber(account, `codex_${window}_used_percent`)
+  if (usedPercent === null) return null
+  if (isQuotaWindowReset(account, window)) return 100
+  return clampPercent(100 - usedPercent)
+}
+
+function formatQuotaRemainingPercent(value: number | null): string {
+  if (value === null) return '-'
+  return `${Math.round(value)}%`
+}
+
+function readQuotaResetAt(account: Account, window: OpenAIQuotaWindow): Date | null {
+  const resetAt = readAccountExtraString(account, `codex_${window}_reset_at`)
+  if (!resetAt) return null
+  const date = new Date(resetAt)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatQuotaResetTime(account: Account, window: OpenAIQuotaWindow): string {
+  const date = readQuotaResetAt(account, window)
+  if (!date) return '-'
+  return formatDateTime(date, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+}
+
+function getQuotaRemainingClass(value: number | null): string {
+  const base = 'inline-flex min-w-[3.75rem] justify-center rounded-md px-2 py-0.5 text-xs font-semibold'
+  if (value === null) return `${base} bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-300`
+  if (value <= 10) return `${base} bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300`
+  if (value <= 30) return `${base} bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300`
+  return `${base} bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300`
+}
+
+function formatQuotaRemainingTitle(account: Account, window: OpenAIQuotaWindow): string {
+  const label = window === '5h'
+    ? t('admin.accounts.columns.quota5hRemaining')
+    : t('admin.accounts.columns.quota7dRemaining')
+  const resetAt = readQuotaResetAt(account, window)
+  const resetText = resetAt ? formatDateTime(resetAt) : '-'
+  return `${label}: ${formatQuotaRemainingPercent(getOpenAIQuotaRemainingPercent(account, window))} | ${t('admin.accounts.quotaRefreshAt')}: ${resetText}`
+}
+
 // All available columns
-const allColumns = computed(() => {
-  const c = [
+const allColumns = computed<Column[]>(() => {
+  const c: Column[] = [
     { key: 'select', label: '', sortable: false },
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
@@ -1122,7 +1214,8 @@ const allColumns = computed(() => {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
   }
   c.push(
-    { key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false },
+    { key: 'quota_5h_remaining', label: t('admin.accounts.columns.quota5hRemaining'), sortable: false, class: 'text-center min-w-[7.5rem]' },
+    { key: 'quota_7d_remaining', label: t('admin.accounts.columns.quota7dRemaining'), sortable: false, class: 'text-center min-w-[7.5rem]' },
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },

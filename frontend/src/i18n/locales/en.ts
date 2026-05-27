@@ -2965,6 +2965,7 @@ export default {
       schedulableDisabled: 'Scheduling disabled',
       failedToToggleSchedulable: 'Failed to toggle scheduling status',
       groupCountTotal: '{count} groups total',
+      quotaRefreshAt: 'Refresh',
       platforms: {
         anthropic: 'Anthropic',
         claude: 'Claude',
@@ -3019,6 +3020,8 @@ export default {
         todayStats: 'Today Stats',
         groups: 'Groups',
         usageWindows: 'Usage Windows',
+        quota5hRemaining: '5h Quota Left',
+        quota7dRemaining: '7d Quota Left',
         proxy: 'Proxy',
         lastUsed: 'Last Used',
         expiresAt: 'Expires At',

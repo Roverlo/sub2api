@@ -3042,6 +3042,7 @@ export default {
       schedulableDisabled: '调度已关闭',
       failedToToggleSchedulable: '切换调度状态失败',
       groupCountTotal: '共 {count} 个分组',
+      quotaRefreshAt: '刷新',
       columns: {
         name: '名称',
         platformType: '平台/类型',
@@ -3057,6 +3058,8 @@ export default {
         todayStats: '今日统计',
         groups: '分组',
         usageWindows: '用量窗口',
+        quota5hRemaining: '5h额度剩余',
+        quota7dRemaining: '7d额度剩余',
         proxy: '代理',
         lastUsed: '最近使用',
         expiresAt: '过期时间',
