@@ -20,6 +20,7 @@
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
                 <button
+                  data-test="account-auto-refresh-trigger"
                   @click="
                     showAutoRefreshDropdown = !showAutoRefreshDropdown;
                     showAccountToolsDropdown = false
@@ -38,10 +39,12 @@
                 </button>
                 <div
                   v-if="showAutoRefreshDropdown"
+                  data-test="account-auto-refresh-menu"
                   class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
                 >
                   <div class="p-2">
                     <button
+                      data-test="account-auto-refresh-enable"
                       @click="setAutoRefreshEnabled(!autoRefreshEnabled)"
                       class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                     >
@@ -52,6 +55,7 @@
                     <button
                       v-for="sec in autoRefreshIntervals"
                       :key="sec"
+                      data-test="account-auto-refresh-interval"
                       @click="setAutoRefreshInterval(sec)"
                       class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                     >
@@ -694,10 +698,11 @@ if (typeof window !== 'undefined') {
 }
 
 const setAutoRefreshEnabled = (enabled: boolean) => {
+  showAutoRefreshDropdown.value = false
   autoRefreshEnabled.value = enabled
   saveAutoRefreshToStorage()
   if (enabled) {
-    autoRefreshCountdown.value = autoRefreshIntervalSeconds.value
+    autoRefreshCountdown.value = 0
     resumeAutoRefresh()
   } else {
     pauseAutoRefresh()
@@ -706,10 +711,12 @@ const setAutoRefreshEnabled = (enabled: boolean) => {
 }
 
 const setAutoRefreshInterval = (seconds: (typeof autoRefreshIntervals)[number]) => {
+  showAutoRefreshDropdown.value = false
   autoRefreshIntervalSeconds.value = seconds
   saveAutoRefreshToStorage()
   if (autoRefreshEnabled.value) {
-    autoRefreshCountdown.value = seconds
+    autoRefreshCountdown.value = 0
+    resumeAutoRefresh()
   }
 }
 
@@ -1022,7 +1029,7 @@ const { pause: pauseAutoRefresh, resume: resumeAutoRefresh } = useIntervalFn(
     if (document.hidden) return
     if (loading.value || autoRefreshFetching.value) return
     if (isAnyModalOpen.value) return
-    if (menu.show || showAccountToolsDropdown.value || showAutoRefreshDropdown.value) return
+    if (menu.show || showAccountToolsDropdown.value) return
     if (inAutoRefreshSilentWindow()) {
       autoRefreshCountdown.value = Math.max(
         0,

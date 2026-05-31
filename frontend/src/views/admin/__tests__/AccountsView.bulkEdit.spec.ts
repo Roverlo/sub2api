@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
@@ -84,9 +84,47 @@ const BulkEditAccountModalStub = {
   template: '<div data-test="bulk-edit-modal" :data-show="String(show)" :data-target-mode="target?.mode ?? \'\'"></div>'
 }
 
+const mountAccountsView = () => mount(AccountsView, {
+  global: {
+    stubs: {
+      AppLayout: { template: '<div><slot /></div>' },
+      TablePageLayout: {
+        template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+      },
+      DataTable: DataTableStub,
+      Pagination: true,
+      ConfirmDialog: true,
+      AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
+      AccountTableFilters: { template: '<div></div>' },
+      AccountBulkActionsBar: AccountBulkActionsBarStub,
+      AccountActionMenu: true,
+      ImportDataModal: true,
+      ReAuthAccountModal: true,
+      AccountTestModal: true,
+      AccountStatsModal: true,
+      ScheduledTestsPanel: true,
+      SyncFromCrsModal: true,
+      TempUnschedStatusModal: true,
+      ErrorPassthroughRulesModal: true,
+      TLSFingerprintProfilesModal: true,
+      CreateAccountModal: true,
+      EditAccountModal: true,
+      BulkEditAccountModal: BulkEditAccountModalStub,
+      PlatformTypeBadge: true,
+      AccountCapacityCell: true,
+      AccountStatusIndicator: true,
+      AccountTodayStatsCell: true,
+      AccountGroupsCell: true,
+      AccountUsageCell: true,
+      Icon: true
+    }
+  }
+})
+
 describe('admin AccountsView bulk edit scope', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.useRealTimers()
 
     listAccounts.mockReset()
     listWithEtag.mockReset()
@@ -111,43 +149,12 @@ describe('admin AccountsView bulk edit scope', () => {
     getAllGroups.mockResolvedValue([])
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
-    const wrapper = mount(AccountsView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: {
-            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
-          },
-          DataTable: DataTableStub,
-          Pagination: true,
-          ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
-          AccountBulkActionsBar: AccountBulkActionsBarStub,
-          AccountActionMenu: true,
-          ImportDataModal: true,
-          ReAuthAccountModal: true,
-          AccountTestModal: true,
-          AccountStatsModal: true,
-          ScheduledTestsPanel: true,
-          SyncFromCrsModal: true,
-          TempUnschedStatusModal: true,
-          ErrorPassthroughRulesModal: true,
-          TLSFingerprintProfilesModal: true,
-          CreateAccountModal: true,
-          EditAccountModal: true,
-          BulkEditAccountModal: BulkEditAccountModalStub,
-          PlatformTypeBadge: true,
-          AccountCapacityCell: true,
-          AccountStatusIndicator: true,
-          AccountTodayStatsCell: true,
-          AccountGroupsCell: true,
-          AccountUsageCell: true,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountAccountsView()
 
     await flushPromises()
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
@@ -177,42 +184,7 @@ describe('admin AccountsView bulk edit scope', () => {
       pages: 1
     })
 
-    const wrapper = mount(AccountsView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: {
-            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
-          },
-          DataTable: DataTableStub,
-          Pagination: true,
-          ConfirmDialog: true,
-          AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-          AccountTableFilters: { template: '<div></div>' },
-          AccountBulkActionsBar: AccountBulkActionsBarStub,
-          AccountActionMenu: true,
-          ImportDataModal: true,
-          ReAuthAccountModal: true,
-          AccountTestModal: true,
-          AccountStatsModal: true,
-          ScheduledTestsPanel: true,
-          SyncFromCrsModal: true,
-          TempUnschedStatusModal: true,
-          ErrorPassthroughRulesModal: true,
-          TLSFingerprintProfilesModal: true,
-          CreateAccountModal: true,
-          EditAccountModal: true,
-          BulkEditAccountModal: BulkEditAccountModalStub,
-          PlatformTypeBadge: true,
-          AccountCapacityCell: true,
-          AccountStatusIndicator: true,
-          AccountTodayStatsCell: true,
-          AccountGroupsCell: true,
-          AccountUsageCell: true,
-          Icon: true
-        }
-      }
-    })
+    const wrapper = mountAccountsView()
 
     await flushPromises()
 
@@ -223,5 +195,36 @@ describe('admin AccountsView bulk edit scope', () => {
       label: 'admin.accounts.columns.createdAt',
       sortable: true
     })
+  })
+
+  it('closes the auto-refresh menu and refreshes on the next tick when enabled', async () => {
+    vi.useFakeTimers()
+    listWithEtag.mockResolvedValue({
+      notModified: false,
+      etag: '"next"',
+      data: {
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        pages: 0
+      }
+    })
+
+    const wrapper = mountAccountsView()
+
+    await flushPromises()
+    await wrapper.get('[data-test="account-auto-refresh-trigger"]').trigger('click')
+    expect(wrapper.find('[data-test="account-auto-refresh-menu"]').exists()).toBe(true)
+
+    await wrapper.get('[data-test="account-auto-refresh-enable"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="account-auto-refresh-menu"]').exists()).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(listWithEtag).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 })
