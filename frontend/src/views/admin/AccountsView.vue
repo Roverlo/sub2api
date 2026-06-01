@@ -321,8 +321,30 @@
               {{ (row.rate_multiplier ?? 1).toFixed(2) }}x
             </span>
           </template>
-          <template #cell-priority="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
+          <template #cell-priority="{ row, value }">
+            <input
+              v-if="editingPriorityAccountId === row.id"
+              ref="priorityInputRef"
+              v-model.number="priorityDraft"
+              type="number"
+              min="0"
+              class="h-8 w-16 rounded-md border border-primary-300 bg-white px-2 text-sm text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-wait disabled:opacity-60 dark:border-primary-600 dark:bg-dark-800 dark:text-gray-100"
+              :disabled="savingPriorityAccountId === row.id"
+              @keydown.enter.prevent="savePriorityEdit(row)"
+              @keydown.esc.prevent="cancelPriorityEdit"
+              @blur="savePriorityEdit(row)"
+              @click.stop
+            />
+            <button
+              v-else
+              type="button"
+              class="inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-sm text-gray-700 transition hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-wait disabled:opacity-60 dark:text-gray-300 dark:hover:bg-primary-900/20 dark:hover:text-primary-300"
+              :disabled="savingPriorityAccountId === row.id"
+              :title="t('admin.accounts.priorityHint')"
+              @click.stop="startPriorityEdit(row)"
+            >
+              {{ value }}
+            </button>
           </template>
           <template #cell-last_used_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatRelativeTime(value) }}</span>
@@ -404,7 +426,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -516,6 +538,15 @@ const scheduleModelOptions = ref<SelectOption[]>([])
 const togglingSchedulable = ref<number | null>(null)
 const menu = reactive<{show:boolean, acc:Account|null, pos:{top:number, left:number}|null}>({ show: false, acc: null, pos: null })
 const exportingData = ref(false)
+const editingPriorityAccountId = ref<number | null>(null)
+const savingPriorityAccountId = ref<number | null>(null)
+const priorityDraft = ref<number | string>(1)
+const priorityInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+
+const getPriorityInput = () => {
+  const inputRef = priorityInputRef.value
+  return Array.isArray(inputRef) ? inputRef[0] ?? null : inputRef
+}
 
 // Account tools dropdown
 const showAccountToolsDropdown = ref(false)
@@ -1345,6 +1376,62 @@ const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => 
   const idSet = new Set(accountIds)
   accounts.value = accounts.value.map((account) => (idSet.has(account.id) ? { ...account, schedulable } : account))
 }
+
+const startPriorityEdit = async (account: Account) => {
+  if (savingPriorityAccountId.value !== null) return
+  editingPriorityAccountId.value = account.id
+  priorityDraft.value = account.priority
+  await nextTick()
+  const input = getPriorityInput()
+  input?.focus()
+  input?.select()
+}
+
+const cancelPriorityEdit = () => {
+  editingPriorityAccountId.value = null
+}
+
+const savePriorityEdit = async (account: Account) => {
+  if (editingPriorityAccountId.value !== account.id || savingPriorityAccountId.value === account.id) {
+    return
+  }
+
+  if (priorityDraft.value === '') {
+    priorityDraft.value = account.priority
+    editingPriorityAccountId.value = null
+    appStore.showError(t('admin.accounts.failedToUpdate'))
+    return
+  }
+
+  const nextPriority = Number(priorityDraft.value)
+  if (!Number.isInteger(nextPriority) || nextPriority < 0) {
+    priorityDraft.value = account.priority
+    editingPriorityAccountId.value = null
+    appStore.showError(t('admin.accounts.failedToUpdate'))
+    return
+  }
+
+  if (nextPriority === account.priority) {
+    editingPriorityAccountId.value = null
+    return
+  }
+
+  savingPriorityAccountId.value = account.id
+  try {
+    const updated = await adminAPI.accounts.update(account.id, { priority: nextPriority })
+    patchAccountInList(updated)
+    enterAutoRefreshSilentWindow()
+  } catch (error: any) {
+    console.error('Failed to update account priority:', error)
+    appStore.showError(error?.response?.data?.message || error?.message || t('admin.accounts.failedToUpdate'))
+  } finally {
+    if (editingPriorityAccountId.value === account.id) {
+      editingPriorityAccountId.value = null
+    }
+    savingPriorityAccountId.value = null
+  }
+}
+
 const normalizeBulkSchedulableResult = (
   result: {
     success?: number
