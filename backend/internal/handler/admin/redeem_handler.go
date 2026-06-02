@@ -85,18 +85,13 @@ func resolveRedeemCodeExpiresAt(expiresAt *time.Time, expiresInDays *int) (*time
 // GET /api/v1/admin/redeem-codes
 func (h *RedeemHandler) List(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
-	codeType := c.Query("type")
-	status := c.Query("status")
-	search := c.Query("search")
+	filters, ok := parseRedeemCodeListFilters(c)
+	if !ok {
+		return
+	}
 	sortBy := c.DefaultQuery("sort_by", "id")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
-	// 标准化和验证 search 参数
-	search = strings.TrimSpace(search)
-	if len(search) > 100 {
-		search = search[:100]
-	}
-
-	codes, total, err := h.adminService.ListRedeemCodes(c.Request.Context(), page, pageSize, codeType, status, search, sortBy, sortOrder)
+	codes, total, err := h.adminService.ListRedeemCodes(c.Request.Context(), page, pageSize, filters, sortBy, sortOrder)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -107,6 +102,40 @@ func (h *RedeemHandler) List(c *gin.Context) {
 		out = append(out, *dto.RedeemCodeFromServiceAdmin(&codes[i]))
 	}
 	response.Paginated(c, out, total, page, pageSize)
+}
+
+func parseRedeemCodeListFilters(c *gin.Context) (service.RedeemCodeListFilters, bool) {
+	filters := service.RedeemCodeListFilters{
+		Type:   c.Query("type"),
+		Status: c.Query("status"),
+		Search: strings.TrimSpace(c.Query("search")),
+	}
+	if len(filters.Search) > 100 {
+		filters.Search = filters.Search[:100]
+	}
+
+	if raw := strings.TrimSpace(c.Query("value_min")); raw != "" {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid value_min")
+			return service.RedeemCodeListFilters{}, false
+		}
+		filters.ValueMin = &value
+	}
+	if raw := strings.TrimSpace(c.Query("value_max")); raw != "" {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid value_max")
+			return service.RedeemCodeListFilters{}, false
+		}
+		filters.ValueMax = &value
+	}
+	if filters.ValueMin != nil && filters.ValueMax != nil && *filters.ValueMin > *filters.ValueMax {
+		response.BadRequest(c, "value_min cannot be greater than value_max")
+		return service.RedeemCodeListFilters{}, false
+	}
+
+	return filters, true
 }
 
 // GetByID handles getting a redeem code by ID
@@ -391,17 +420,15 @@ func (h *RedeemHandler) GetStats(c *gin.Context) {
 // Export handles exporting redeem codes to CSV
 // GET /api/v1/admin/redeem-codes/export
 func (h *RedeemHandler) Export(c *gin.Context) {
-	codeType := c.Query("type")
-	status := c.Query("status")
-	search := strings.TrimSpace(c.Query("search"))
+	filters, ok := parseRedeemCodeListFilters(c)
+	if !ok {
+		return
+	}
 	sortBy := c.DefaultQuery("sort_by", "id")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
-	if len(search) > 100 {
-		search = search[:100]
-	}
 
 	// Get all codes without pagination (use large page size)
-	codes, _, err := h.adminService.ListRedeemCodes(c.Request.Context(), 1, 10000, codeType, status, search, sortBy, sortOrder)
+	codes, _, err := h.adminService.ListRedeemCodes(c.Request.Context(), 1, 10000, filters, sortBy, sortOrder)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -62,6 +62,7 @@ type stubAdminService struct {
 		calls     int
 	}
 	lastListRedeemCodes struct {
+		filters   service.RedeemCodeListFilters
 		codeType  string
 		status    string
 		search    string
@@ -526,10 +527,11 @@ func (s *stubAdminService) CheckProxyQuality(ctx context.Context, id int64) (*se
 	}, nil
 }
 
-func (s *stubAdminService) ListRedeemCodes(ctx context.Context, page, pageSize int, codeType, status, search string, sortBy, sortOrder string) ([]service.RedeemCode, int64, error) {
-	s.lastListRedeemCodes.codeType = codeType
-	s.lastListRedeemCodes.status = status
-	s.lastListRedeemCodes.search = search
+func (s *stubAdminService) ListRedeemCodes(ctx context.Context, page, pageSize int, filters service.RedeemCodeListFilters, sortBy, sortOrder string) ([]service.RedeemCode, int64, error) {
+	s.lastListRedeemCodes.filters = filters
+	s.lastListRedeemCodes.codeType = filters.Type
+	s.lastListRedeemCodes.status = filters.Status
+	s.lastListRedeemCodes.search = filters.Search
 	s.lastListRedeemCodes.sortBy = sortBy
 	s.lastListRedeemCodes.sortOrder = sortOrder
 	s.lastListRedeemCodes.calls++

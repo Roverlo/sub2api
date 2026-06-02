@@ -1887,7 +1887,7 @@ func (stubRedeemCodeRepo) List(ctx context.Context, params pagination.Pagination
 	return nil, nil, errors.New("not implemented")
 }
 
-func (stubRedeemCodeRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+func (stubRedeemCodeRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters service.RedeemCodeListFilters) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 

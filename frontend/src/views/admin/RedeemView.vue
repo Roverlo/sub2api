@@ -2,55 +2,142 @@
   <AppLayout>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-wrap items-center gap-3">
-          <!-- Left: Search + Filters -->
-          <div class="flex-1 sm:max-w-64">
-            <input
-              v-model="searchQuery"
-              type="text"
-              :placeholder="t('admin.redeem.searchCodes')"
-              class="input"
-              @input="handleSearch"
+        <div class="space-y-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <!-- Left: Search + Filters -->
+            <div class="min-w-60 flex-1 sm:max-w-72">
+              <input
+                v-model="searchQuery"
+                type="text"
+                :placeholder="t('admin.redeem.searchCodes')"
+                class="input"
+                @input="handleSearch"
+              />
+            </div>
+            <Select
+              v-model="filters.type"
+              :options="filterTypeOptions"
+              class="w-36"
+              @change="handleFilterChange"
             />
-          </div>
-          <Select
-            v-model="filters.type"
-            :options="filterTypeOptions"
-            class="w-36"
-            @change="loadCodes"
-          />
-          <Select
-            v-model="filters.status"
-            :options="filterStatusOptions"
-            class="w-36"
-            @change="loadCodes"
-          />
+            <Select
+              v-model="filters.status"
+              :options="filterStatusOptions"
+              class="w-36"
+              @change="handleFilterChange"
+            />
+            <div class="flex min-w-64 items-center gap-2">
+              <input
+                v-model="filters.value_min"
+                type="number"
+                min="0"
+                step="0.01"
+                :placeholder="t('admin.redeem.valueMin')"
+                class="input"
+                @input="handleValueFilterInput"
+              />
+              <span class="text-sm text-gray-400">-</span>
+              <input
+                v-model="filters.value_max"
+                type="number"
+                min="0"
+                step="0.01"
+                :placeholder="t('admin.redeem.valueMax')"
+                class="input"
+                @input="handleValueFilterInput"
+              />
+            </div>
 
-          <!-- Right: Action buttons -->
-          <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <!-- Right: Action buttons -->
+            <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <button
+                v-if="hasActiveFilters"
+                type="button"
+                class="btn btn-secondary"
+                @click="resetFilters"
+              >
+                <Icon name="x" size="sm" class="mr-2" />
+                {{ t('common.reset') }}
+              </button>
+              <button
+                @click="loadCodes"
+                :disabled="loading"
+                class="btn btn-secondary"
+                :title="t('common.refresh')"
+              >
+                <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+              </button>
+              <button @click="handleExportCodes" class="btn btn-secondary">
+                <Icon name="download" size="sm" class="mr-2" />
+                {{ t('admin.redeem.exportCsv') }}
+              </button>
+              <button
+                data-test="batch-update-open"
+                @click="openBatchUpdateDialog"
+                :disabled="selectedCount === 0 || batchUpdating"
+                class="btn btn-secondary"
+              >
+                <Icon name="edit" size="md" class="mr-2" />
+                {{ t('admin.redeem.batchUpdate') }}
+              </button>
+              <button @click="showGenerateDialog = true" class="btn btn-primary">
+                <Icon name="plus" size="sm" class="mr-2" />
+                {{ t('admin.redeem.generateCodes') }}
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.redeem.amountBuckets') }}
+            </span>
             <button
-              @click="loadCodes"
-              :disabled="loading"
-              class="btn btn-secondary"
-              :title="t('common.refresh')"
+              v-for="bucket in visibleValueBuckets"
+              :key="bucket.key"
+              type="button"
+              :class="[
+                'inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                isExactValueFilter(bucket.value)
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-primary-200 hover:text-primary-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300 dark:hover:border-primary-700'
+              ]"
+              @click="applyExactValueFilter(bucket.value, bucket.type)"
             >
-              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+              <span>{{ formatRedeemValue(bucket.value, bucket.type) }}</span>
+              <span v-if="!filters.type" class="text-gray-400">
+                {{ t('admin.redeem.types.' + bucket.type) }}
+              </span>
+              <span class="text-gray-400">{{ bucket.count }}</span>
             </button>
-            <button @click="handleExportCodes" class="btn btn-secondary">
-              {{ t('admin.redeem.exportCsv') }}
-            </button>
-            <button
-              data-test="batch-update-open"
-              @click="openBatchUpdateDialog"
-              :disabled="selectedCount === 0 || batchUpdating"
-              class="btn btn-secondary"
-            >
-              <Icon name="edit" size="md" class="mr-2" />
-              {{ t('admin.redeem.batchUpdate') }}
-            </button>
-            <button @click="showGenerateDialog = true" class="btn btn-primary">
-              {{ t('admin.redeem.generateCodes') }}
-            </button>
+            <span v-if="visibleValueBuckets.length === 0" class="text-xs text-gray-400">
+              {{ loading ? t('common.loading') : t('empty.noData') }}
+            </span>
+          </div>
+
+          <div
+            v-if="selectedCount > 0"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 dark:border-primary-800 dark:bg-primary-900/20"
+          >
+            <div class="flex flex-wrap items-center gap-2 text-sm text-primary-900 dark:text-primary-100">
+              <span class="font-medium">
+                {{ t('admin.redeem.selectedCount', { count: selectedCount }) }}
+              </span>
+              <span v-if="selectedValueSummary" class="text-primary-700 dark:text-primary-200">
+                {{ selectedValueSummary }}
+              </span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="text-xs font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
+                @click="clearSelectedCodes"
+              >
+                {{ t('admin.redeem.clearSelection') }}
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" @click="openBatchUpdateDialog">
+                {{ t('admin.redeem.batchUpdate') }}
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -205,31 +292,6 @@
       </template>
 
       <template #pagination>
-        <div
-          v-if="selectedCount > 0"
-          class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary-50 p-3 dark:bg-primary-900/20"
-        >
-          <span class="text-sm font-medium text-primary-900 dark:text-primary-100">
-            {{ t('admin.redeem.selectedCount', { count: selectedCount }) }}
-          </span>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="text-xs font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
-              @click="clearSelectedCodes"
-            >
-              {{ t('admin.redeem.clearSelection') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              @click="openBatchUpdateDialog"
-            >
-              {{ t('admin.redeem.batchUpdate') }}
-            </button>
-          </div>
-        </div>
-
         <Pagination
           v-if="pagination.total > 0"
           :page="pagination.page"
@@ -304,6 +366,22 @@
                 required
                 class="input"
               />
+              <div class="mt-2 flex flex-wrap gap-2">
+                <button
+                  v-for="preset in currentValuePresets"
+                  :key="preset"
+                  type="button"
+                  :class="[
+                    'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                    Number(generateForm.value) === preset
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
+                      : 'border-gray-200 text-gray-600 hover:border-primary-200 hover:text-primary-700 dark:border-dark-600 dark:text-gray-300'
+                  ]"
+                  @click="generateForm.value = preset"
+                >
+                  {{ formatRedeemValue(preset, generateForm.type) }}
+                </button>
+              </div>
             </div>
             <!-- 邀请码类型：显示提示信息 -->
             <div v-if="generateForm.type === 'invitation'" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
@@ -395,6 +473,28 @@
                 required
                 class="input"
               />
+              <div class="mt-2 flex flex-wrap gap-2">
+                <button
+                  v-for="preset in countPresets"
+                  :key="preset"
+                  type="button"
+                  :class="[
+                    'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                    Number(generateForm.count) === preset
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
+                      : 'border-gray-200 text-gray-600 hover:border-primary-200 hover:text-primary-700 dark:border-dark-600 dark:text-gray-300'
+                  ]"
+                  @click="generateForm.count = preset"
+                >
+                  {{ preset }}
+                </button>
+              </div>
+              <p
+                v-if="generateForm.type === 'balance'"
+                class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ t('admin.redeem.generateTotal', { total: formatCurrency(generateForm.value * generateForm.count) }) }}
+              </p>
             </div>
             <div class="flex justify-end gap-3 pt-2">
               <button type="button" @click="showGenerateDialog = false" class="btn btn-secondary">
@@ -764,6 +864,10 @@ const batchExpiryModeOptions = computed(() => [
   { value: 'custom', label: t('admin.redeem.customExpiry') }
 ])
 
+const balanceValuePresets = [5, 10, 20, 50, 100, 200]
+const concurrencyValuePresets = [1, 2, 5, 10, 20]
+const countPresets = [1, 5, 10, 20, 50, 100]
+
 const codes = ref<RedeemCode[]>([])
 const loading = ref(false)
 const generating = ref(false)
@@ -771,7 +875,9 @@ const batchUpdating = ref(false)
 const searchQuery = ref('')
 const filters = reactive({
   type: '',
-  status: ''
+  status: '',
+  value_min: '',
+  value_max: ''
 })
 const pagination = reactive({
   page: 1,
@@ -837,27 +943,160 @@ const generateForm = reactive({
   custom_expiry_days: 7
 })
 
+// 面值筛选和批量生成辅助函数
+const parseOptionalNumber = (value: string) => {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+const formatCurrency = (value: number) => `$${Number(value || 0).toFixed(2)}`
+
+const formatRedeemValue = (value: number, type: RedeemCodeType) => {
+  if (type === 'balance') return formatCurrency(value)
+  if (type === 'subscription') return `${value || 0} ${t('admin.redeem.days')}`
+  return String(value)
+}
+
+const currentValuePresets = computed(() => {
+  if (generateForm.type === 'balance') return balanceValuePresets
+  if (generateForm.type === 'concurrency') return concurrencyValuePresets
+  return []
+})
+
+const hasActiveFilters = computed(
+  () =>
+    Boolean(searchQuery.value.trim()) ||
+    Boolean(filters.type) ||
+    Boolean(filters.status) ||
+    Boolean(filters.value_min.trim()) ||
+    Boolean(filters.value_max.trim())
+)
+
+const visibleValueBuckets = computed(() => {
+  const bucketMap = new Map<string, { key: string; value: number; type: RedeemCodeType; count: number }>()
+  for (const code of codes.value) {
+    if (code.type !== 'balance' && code.type !== 'concurrency') continue
+    const key = `${code.type}:${code.value}`
+    const existing = bucketMap.get(key)
+    if (existing) {
+      existing.count += 1
+      continue
+    }
+    bucketMap.set(key, {
+      key,
+      value: code.value,
+      type: code.type,
+      count: 1
+    })
+  }
+
+  return Array.from(bucketMap.values())
+    .sort((a, b) => b.count - a.count || a.value - b.value)
+    .slice(0, 8)
+})
+
+const selectedValueSummary = computed(() => {
+  const selectedCodes = codes.value.filter((code) => selectedCodeIds.value.has(code.id))
+  if (selectedCodes.length === 0) return ''
+
+  const bucketMap = new Map<string, { value: number; type: RedeemCodeType; count: number }>()
+  for (const code of selectedCodes) {
+    if (code.type !== 'balance' && code.type !== 'concurrency') continue
+    const key = `${code.type}:${code.value}`
+    const existing = bucketMap.get(key)
+    if (existing) {
+      existing.count += 1
+      continue
+    }
+    bucketMap.set(key, { value: code.value, type: code.type, count: 1 })
+  }
+
+  return Array.from(bucketMap.values())
+    .sort((a, b) => b.count - a.count || a.value - b.value)
+    .slice(0, 4)
+    .map((bucket) => `${formatRedeemValue(bucket.value, bucket.type)} x ${bucket.count}`)
+    .join(' / ')
+})
+
+const isExactValueFilter = (value: number) => {
+  const minValue = parseOptionalNumber(filters.value_min)
+  const maxValue = parseOptionalNumber(filters.value_max)
+  return minValue === value && maxValue === value
+}
+
+const handleFilterChange = () => {
+  pagination.page = 1
+  loadCodes()
+}
+
+const handleValueFilterInput = () => {
+  clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    pagination.page = 1
+    loadCodes()
+  }, 300)
+}
+
+const applyExactValueFilter = (value: number, type?: RedeemCodeType) => {
+  const stringValue = String(value)
+  if (type) filters.type = type
+  filters.value_min = stringValue
+  filters.value_max = stringValue
+  pagination.page = 1
+  loadCodes()
+}
+
+const resetFilters = () => {
+  searchQuery.value = ''
+  filters.type = ''
+  filters.status = ''
+  filters.value_min = ''
+  filters.value_max = ''
+  pagination.page = 1
+  loadCodes()
+}
+
 // 监听类型变化，邀请码类型时自动设置 value 为 0
 watch(
   () => generateForm.type,
   (newType) => {
     if (newType === 'invitation') {
       generateForm.value = 0
+    } else if (newType === 'concurrency' && !concurrencyValuePresets.includes(generateForm.value)) {
+      generateForm.value = concurrencyValuePresets[0]
+    } else if (newType === 'balance' && generateForm.value === 0) {
+      generateForm.value = balanceValuePresets[2]
     } else if (generateForm.value === 0) {
       generateForm.value = 10
     }
   }
 )
 
-const buildRedeemQueryFilters = () => ({
-  type: (filters.type || undefined) as RedeemCodeType | undefined,
-  status: (filters.status || undefined) as 'used' | 'expired' | 'unused' | 'disabled' | undefined,
-  search: searchQuery.value || undefined,
-  sort_by: sortState.sort_by,
-  sort_order: sortState.sort_order
-})
+const buildRedeemQueryFilters = () => {
+  const valueMin = parseOptionalNumber(filters.value_min)
+  const valueMax = parseOptionalNumber(filters.value_max)
+  if (valueMin !== undefined && valueMax !== undefined && valueMin > valueMax) {
+    appStore.showError(t('admin.redeem.valueRangeInvalid'))
+    return null
+  }
+
+  return {
+    type: (filters.type || undefined) as RedeemCodeType | undefined,
+    status: (filters.status || undefined) as 'used' | 'expired' | 'unused' | 'disabled' | undefined,
+    search: searchQuery.value || undefined,
+    value_min: valueMin,
+    value_max: valueMax,
+    sort_by: sortState.sort_by,
+    sort_order: sortState.sort_order
+  }
+}
 
 const loadCodes = async () => {
+  const queryFilters = buildRedeemQueryFilters()
+  if (!queryFilters) return
+
   if (abortController) {
     abortController.abort()
   }
@@ -868,7 +1107,7 @@ const loadCodes = async () => {
     const response = await adminAPI.redeem.list(
       pagination.page,
       pagination.page_size,
-      buildRedeemQueryFilters(),
+      queryFilters,
       {
         signal: currentController.signal
       }
@@ -1068,8 +1307,11 @@ const copyToClipboard = async (text: string) => {
 }
 
 const handleExportCodes = async () => {
+  const queryFilters = buildRedeemQueryFilters()
+  if (!queryFilters) return
+
   try {
-    const blob = await adminAPI.redeem.exportCodes(buildRedeemQueryFilters())
+    const blob = await adminAPI.redeem.exportCodes(queryFilters)
 
     // Create download link
     const url = window.URL.createObjectURL(blob)

@@ -99,18 +99,18 @@ func (r *redeemCodeRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *redeemCodeRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.RedeemCode, *pagination.PaginationResult, error) {
-	return r.ListWithFilters(ctx, params, "", "", "")
+	return r.ListWithFilters(ctx, params, service.RedeemCodeListFilters{})
 }
 
-func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters service.RedeemCodeListFilters) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	q := r.client.RedeemCode.Query()
 
-	if codeType != "" {
-		q = q.Where(redeemcode.TypeEQ(codeType))
+	if filters.Type != "" {
+		q = q.Where(redeemcode.TypeEQ(filters.Type))
 	}
-	if status != "" {
+	if filters.Status != "" {
 		now := time.Now()
-		switch status {
+		switch filters.Status {
 		case service.StatusExpired:
 			q = q.Where(redeemcode.Or(
 				redeemcode.StatusEQ(service.StatusExpired),
@@ -129,14 +129,20 @@ func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagin
 				),
 			)
 		default:
-			q = q.Where(redeemcode.StatusEQ(status))
+			q = q.Where(redeemcode.StatusEQ(filters.Status))
 		}
 	}
-	if search != "" {
+	if filters.ValueMin != nil {
+		q = q.Where(redeemcode.ValueGTE(*filters.ValueMin))
+	}
+	if filters.ValueMax != nil {
+		q = q.Where(redeemcode.ValueLTE(*filters.ValueMax))
+	}
+	if filters.Search != "" {
 		q = q.Where(
 			redeemcode.Or(
-				redeemcode.CodeContainsFold(search),
-				redeemcode.HasUserWith(user.EmailContainsFold(search)),
+				redeemcode.CodeContainsFold(filters.Search),
+				redeemcode.HasUserWith(user.EmailContainsFold(filters.Search)),
 			),
 		)
 	}

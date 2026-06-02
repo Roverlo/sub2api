@@ -123,6 +123,7 @@ type redeemRepoStubForAdminList struct {
 
 	listWithFiltersCalls  int
 	listWithFiltersParams pagination.PaginationParams
+	listWithFiltersFilter RedeemCodeListFilters
 	listWithFiltersType   string
 	listWithFiltersStatus string
 	listWithFiltersSearch string
@@ -131,12 +132,13 @@ type redeemRepoStubForAdminList struct {
 	listWithFiltersErr    error
 }
 
-func (s *redeemRepoStubForAdminList) ListWithFilters(_ context.Context, params pagination.PaginationParams, codeType, status, search string) ([]RedeemCode, *pagination.PaginationResult, error) {
+func (s *redeemRepoStubForAdminList) ListWithFilters(_ context.Context, params pagination.PaginationParams, filters RedeemCodeListFilters) ([]RedeemCode, *pagination.PaginationResult, error) {
 	s.listWithFiltersCalls++
 	s.listWithFiltersParams = params
-	s.listWithFiltersType = codeType
-	s.listWithFiltersStatus = status
-	s.listWithFiltersSearch = search
+	s.listWithFiltersFilter = filters
+	s.listWithFiltersType = filters.Type
+	s.listWithFiltersStatus = filters.Status
+	s.listWithFiltersSearch = filters.Search
 
 	if s.listWithFiltersErr != nil {
 		return nil, nil, s.listWithFiltersErr
@@ -250,7 +252,15 @@ func TestAdminService_ListRedeemCodes_WithSearch(t *testing.T) {
 		}
 		svc := &adminServiceImpl{redeemCodeRepo: repo}
 
-		codes, total, err := svc.ListRedeemCodes(context.Background(), 1, 20, RedeemTypeBalance, StatusUnused, "ABC", "value", "ASC")
+		valueMin := 20.0
+		valueMax := 20.0
+		codes, total, err := svc.ListRedeemCodes(context.Background(), 1, 20, RedeemCodeListFilters{
+			Type:     RedeemTypeBalance,
+			Status:   StatusUnused,
+			Search:   "ABC",
+			ValueMin: &valueMin,
+			ValueMax: &valueMax,
+		}, "value", "ASC")
 		require.NoError(t, err)
 		require.Equal(t, int64(3), total)
 		require.Equal(t, []RedeemCode{{ID: 4, Code: "ABC"}}, codes)
@@ -260,5 +270,7 @@ func TestAdminService_ListRedeemCodes_WithSearch(t *testing.T) {
 		require.Equal(t, RedeemTypeBalance, repo.listWithFiltersType)
 		require.Equal(t, StatusUnused, repo.listWithFiltersStatus)
 		require.Equal(t, "ABC", repo.listWithFiltersSearch)
+		require.Equal(t, 20.0, *repo.listWithFiltersFilter.ValueMin)
+		require.Equal(t, 20.0, *repo.listWithFiltersFilter.ValueMax)
 	})
 }

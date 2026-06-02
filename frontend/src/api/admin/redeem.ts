@@ -12,6 +12,16 @@ import type {
   PaginatedResponse
 } from '@/types'
 
+export interface RedeemCodeListFilters {
+  type?: RedeemCodeType
+  status?: 'active' | 'used' | 'expired' | 'unused' | 'disabled'
+  search?: string
+  value_min?: number
+  value_max?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}
+
 /**
  * List all redeem codes with pagination
  * @param page - Page number (default: 1)
@@ -22,13 +32,7 @@ import type {
 export async function list(
   page: number = 1,
   pageSize: number = 20,
-  filters?: {
-    type?: RedeemCodeType
-    status?: 'active' | 'used' | 'expired' | 'unused' | 'disabled'
-    search?: string
-    sort_by?: string
-    sort_order?: 'asc' | 'desc'
-  },
+  filters?: RedeemCodeListFilters,
   options?: {
     signal?: AbortSignal
   }
@@ -181,6 +185,8 @@ export async function exportCodes(filters?: {
   type?: RedeemCodeType
   status?: 'used' | 'expired' | 'unused' | 'disabled'
   search?: string
+  value_min?: number
+  value_max?: number
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }): Promise<Blob> {

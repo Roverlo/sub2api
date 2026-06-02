@@ -4268,6 +4268,11 @@ export default {
       invitationHint: 'Invitation codes are used to restrict user registration. They are automatically marked as used after use.',
       unused: 'Unused',
       used: 'Used',
+      valueMin: 'Min value',
+      valueMax: 'Max value',
+      amountBuckets: 'Current page values',
+      generateTotal: 'Batch total value: {total}',
+      valueRangeInvalid: 'Minimum value cannot be greater than maximum value',
       columns: {
         code: 'Code',
         type: 'Type',
