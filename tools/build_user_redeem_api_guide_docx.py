@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -20,6 +19,28 @@ LIGHT_BLUE = "E8EEF5"
 LIGHT_GRAY = "F2F4F7"
 CALLOUT_FILL = "F4F6F9"
 BORDER = "D7DBE2"
+
+
+def set_run_font(run, size=None, color=None, bold=None, italic=None, mono=False):
+    name = "Consolas" if mono else "Calibri"
+    run.font.name = name
+    run._element.rPr.rFonts.set(qn("w:ascii"), name)
+    run._element.rPr.rFonts.set(qn("w:hAnsi"), name)
+    run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+    if size is not None:
+        run.font.size = Pt(size)
+    if color is not None:
+        run.font.color.rgb = color
+    if bold is not None:
+        run.bold = bold
+    if italic is not None:
+        run.italic = italic
+
+
+def set_paragraph_spacing(paragraph, before=0, after=6, line=1.25):
+    paragraph.paragraph_format.space_before = Pt(before)
+    paragraph.paragraph_format.space_after = Pt(after)
+    paragraph.paragraph_format.line_spacing = line
 
 
 def set_cell_shading(cell, fill):
@@ -73,12 +94,12 @@ def set_table_geometry(table, widths):
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
     table.autofit = False
     tbl_pr = table._tbl.tblPr
+
     tbl_w = tbl_pr.find(qn("w:tblW"))
     if tbl_w is None:
         tbl_w = OxmlElement("w:tblW")
         tbl_pr.append(tbl_w)
-    total = sum(widths)
-    tbl_w.set(qn("w:w"), str(total))
+    tbl_w.set(qn("w:w"), str(sum(widths)))
     tbl_w.set(qn("w:type"), "dxa")
 
     tbl_ind = tbl_pr.find(qn("w:tblInd"))
@@ -100,6 +121,7 @@ def set_table_geometry(table, widths):
         for idx, cell in enumerate(row.cells):
             width = widths[min(idx, len(widths) - 1)]
             cell.width = Inches(width / 1440)
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             tc_pr = cell._tc.get_or_add_tcPr()
             tc_w = tc_pr.find(qn("w:tcW"))
             if tc_w is None:
@@ -107,133 +129,7 @@ def set_table_geometry(table, widths):
                 tc_pr.append(tc_w)
             tc_w.set(qn("w:w"), str(width))
             tc_w.set(qn("w:type"), "dxa")
-            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             set_cell_margins(cell)
-
-
-def set_run_font(run, size=None, color=None, bold=None, italic=None):
-    run.font.name = "Calibri"
-    run._element.rPr.rFonts.set(qn("w:ascii"), "Calibri")
-    run._element.rPr.rFonts.set(qn("w:hAnsi"), "Calibri")
-    run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
-    if size is not None:
-        run.font.size = Pt(size)
-    if color is not None:
-        run.font.color.rgb = color
-    if bold is not None:
-        run.bold = bold
-    if italic is not None:
-        run.italic = italic
-
-
-def set_paragraph_spacing(paragraph, before=0, after=6, line=1.25):
-    paragraph.paragraph_format.space_before = Pt(before)
-    paragraph.paragraph_format.space_after = Pt(after)
-    paragraph.paragraph_format.line_spacing = line
-
-
-def add_heading(doc, text, level=1):
-    p = doc.add_paragraph(style=f"Heading {level}")
-    set_paragraph_spacing(
-        p,
-        before={1: 18, 2: 14, 3: 10}.get(level, 8),
-        after={1: 10, 2: 7, 3: 5}.get(level, 5),
-        line=1.1,
-    )
-    run = p.add_run(text)
-    set_run_font(
-        run,
-        size={1: 16, 2: 13, 3: 12}.get(level, 12),
-        color=BLUE if level < 3 else DARK_BLUE,
-        bold=True,
-    )
-    return p
-
-
-def add_para(doc, text="", bold_prefix=None, after=6):
-    p = doc.add_paragraph()
-    set_paragraph_spacing(p, after=after)
-    if bold_prefix and text.startswith(bold_prefix):
-        r1 = p.add_run(bold_prefix)
-        set_run_font(r1, size=11, color=INK, bold=True)
-        r2 = p.add_run(text[len(bold_prefix) :])
-        set_run_font(r2, size=11, color=INK)
-    else:
-        r = p.add_run(text)
-        set_run_font(r, size=11, color=INK)
-    return p
-
-
-def add_bullet(doc, text):
-    p = doc.add_paragraph(style="List Bullet")
-    set_paragraph_spacing(p, after=4)
-    r = p.add_run(text)
-    set_run_font(r, size=11, color=INK)
-    return p
-
-
-def add_number(doc, text):
-    p = doc.add_paragraph(style="List Number")
-    set_paragraph_spacing(p, after=4)
-    r = p.add_run(text)
-    set_run_font(r, size=11, color=INK)
-    return p
-
-
-def add_code(doc, text):
-    p = doc.add_paragraph()
-    set_paragraph_spacing(p, after=6, line=1.15)
-    run = p.add_run(text)
-    run.font.name = "Consolas"
-    run._element.rPr.rFonts.set(qn("w:ascii"), "Consolas")
-    run._element.rPr.rFonts.set(qn("w:hAnsi"), "Consolas")
-    run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
-    run.font.size = Pt(10)
-    run.font.color.rgb = RGBColor(30, 48, 80)
-    return p
-
-
-def add_callout(doc, title, body):
-    table = doc.add_table(rows=1, cols=1)
-    set_table_geometry(table, [9360])
-    set_table_borders(table, color="E2E7EE", size="4")
-    cell = table.cell(0, 0)
-    set_cell_shading(cell, CALLOUT_FILL)
-    p = cell.paragraphs[0]
-    set_paragraph_spacing(p, after=2)
-    title_run = p.add_run(title)
-    set_run_font(title_run, size=10.5, color=DARK_BLUE, bold=True)
-    body_p = cell.add_paragraph()
-    set_paragraph_spacing(body_p, after=0, line=1.2)
-    body_run = body_p.add_run(body)
-    set_run_font(body_run, size=10.5, color=INK)
-    doc.add_paragraph().paragraph_format.space_after = Pt(2)
-    return table
-
-
-def add_table(doc, headers, rows, widths, header_fill=LIGHT_BLUE):
-    table = doc.add_table(rows=1, cols=len(headers))
-    set_table_geometry(table, widths)
-    set_table_borders(table)
-    hdr = table.rows[0]
-    hdr._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
-    for idx, header in enumerate(headers):
-        cell = hdr.cells[idx]
-        set_cell_shading(cell, header_fill)
-        p = cell.paragraphs[0]
-        set_paragraph_spacing(p, after=0, line=1.15)
-        r = p.add_run(header)
-        set_run_font(r, size=10.5, color=INK, bold=True)
-    for row in rows:
-        cells = table.add_row().cells
-        for idx, value in enumerate(row):
-            p = cells[idx].paragraphs[0]
-            set_paragraph_spacing(p, after=0, line=1.15)
-            r = p.add_run(value)
-            set_run_font(r, size=10.5, color=INK)
-    set_table_geometry(table, widths)
-    doc.add_paragraph().paragraph_format.space_after = Pt(4)
-    return table
 
 
 def configure_styles(doc):
@@ -280,216 +176,333 @@ def add_header_footer(doc):
     section.header_distance = Inches(0.492)
     section.footer_distance = Inches(0.492)
 
-    header = section.header
-    p = header.paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    r = p.add_run("中转站新手说明书")
-    set_run_font(r, size=9, color=MUTED)
+    header = section.header.paragraphs[0]
+    header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = header.add_run("AI 中转站客户指南")
+    set_run_font(run, size=9, color=MUTED)
 
-    footer = section.footer
-    p = footer.paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    r = p.add_run("请勿公开 API Key")
-    set_run_font(r, size=9, color=MUTED)
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = footer.add_run("请勿公开 API Key")
+    set_run_font(run, size=9, color=MUTED)
 
 
-def add_cover(doc):
+def add_title(doc):
     p = doc.add_paragraph()
     set_paragraph_spacing(p, before=10, after=0)
-    kicker = p.add_run("新手上手指南")
-    set_run_font(kicker, size=11, color=BLUE, bold=True)
+    run = p.add_run("客户使用指南")
+    set_run_font(run, size=11, color=BLUE, bold=True)
 
-    title = doc.add_paragraph()
-    set_paragraph_spacing(title, before=3, after=6, line=1.05)
-    r = title.add_run("中转站账号注册、兑换码与 API 使用说明书")
-    set_run_font(r, size=24, color=DARK_BLUE, bold=True)
+    p = doc.add_paragraph()
+    set_paragraph_spacing(p, before=3, after=6, line=1.05)
+    run = p.add_run("我们的 AI 中转站：注册、充值/兑换与 API 接入")
+    set_run_font(run, size=24, color=DARK_BLUE, bold=True)
 
-    subtitle = doc.add_paragraph()
-    set_paragraph_spacing(subtitle, after=14, line=1.2)
-    r = subtitle.add_run("面向第一次使用大模型 API 的用户：按步骤完成注册、兑换额度、复制 URL 和 Key，并在工具或代码中完成调用。")
-    set_run_font(r, size=12.5, color=MUTED)
-
-    add_table(
-        doc,
-        ["你会完成", "结果"],
-        [
-            ("注册账号", "能登录中转站后台"),
-            ("兑换额度", "余额中能看到可用额度"),
-            ("获取 URL 和 Key", "拿到 Base URL 与 API Key"),
-            ("测试调用", "能成功收到大模型回复"),
-        ],
-        [2300, 7060],
-        header_fill=LIGHT_GRAY,
+    p = doc.add_paragraph()
+    set_paragraph_spacing(p, after=14, line=1.2)
+    run = p.add_run(
+        "面向购买或试用我们中转站服务的客户：按网站实际页面完成注册、购买/兑换、创建 API 密钥，并接入到 Codex CLI、Claude Code、Gemini CLI、OpenCode 或自己的程序。"
     )
+    set_run_font(run, size=12.5, color=MUTED)
 
-    add_callout(
-        doc,
-        "重要提醒",
-        "本文中的域名、API Key 和模型名都是示例。实际填写时，请以平台后台展示的信息为准。API Key 等同于额度使用凭证，请像密码一样保管。",
+
+def add_para(doc, text="", after=6, bold_prefix=None):
+    p = doc.add_paragraph()
+    set_paragraph_spacing(p, after=after)
+    if bold_prefix and text.startswith(bold_prefix):
+        r1 = p.add_run(bold_prefix)
+        set_run_font(r1, size=11, color=INK, bold=True)
+        r2 = p.add_run(text[len(bold_prefix):])
+        set_run_font(r2, size=11, color=INK)
+    else:
+        run = p.add_run(text)
+        set_run_font(run, size=11, color=INK)
+    return p
+
+
+def add_heading(doc, text, level=1):
+    p = doc.add_paragraph(style=f"Heading {level}")
+    set_paragraph_spacing(
+        p,
+        before={1: 18, 2: 14, 3: 10}.get(level, 8),
+        after={1: 10, 2: 7, 3: 5}.get(level, 5),
+        line=1.1,
     )
+    run = p.add_run(text)
+    set_run_font(
+        run,
+        size={1: 16, 2: 13, 3: 12}.get(level, 12),
+        color=BLUE if level < 3 else DARK_BLUE,
+        bold=True,
+    )
+    return p
+
+
+def add_bullet(doc, text):
+    p = doc.add_paragraph(style="List Bullet")
+    set_paragraph_spacing(p, after=4)
+    run = p.add_run(text)
+    set_run_font(run, size=11, color=INK)
+
+
+def add_number(doc, text):
+    p = doc.add_paragraph(style="List Number")
+    set_paragraph_spacing(p, after=4)
+    run = p.add_run(text)
+    set_run_font(run, size=11, color=INK)
+
+
+def add_code(doc, text):
+    p = doc.add_paragraph()
+    set_paragraph_spacing(p, after=6, line=1.15)
+    run = p.add_run(text)
+    set_run_font(run, size=10, color=RGBColor(30, 48, 80), mono=True)
+
+
+def add_callout(doc, title, body):
+    table = doc.add_table(rows=1, cols=1)
+    set_table_geometry(table, [9360])
+    set_table_borders(table, color="E2E7EE", size="4")
+    cell = table.cell(0, 0)
+    set_cell_shading(cell, CALLOUT_FILL)
+
+    p = cell.paragraphs[0]
+    set_paragraph_spacing(p, after=2)
+    run = p.add_run(title)
+    set_run_font(run, size=10.5, color=DARK_BLUE, bold=True)
+
+    p = cell.add_paragraph()
+    set_paragraph_spacing(p, after=0, line=1.2)
+    run = p.add_run(body)
+    set_run_font(run, size=10.5, color=INK)
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+
+
+def add_table(doc, headers, rows, widths, header_fill=LIGHT_BLUE):
+    table = doc.add_table(rows=1, cols=len(headers))
+    set_table_geometry(table, widths)
+    set_table_borders(table)
+
+    header_row = table.rows[0]
+    header_row._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
+    for idx, header in enumerate(headers):
+        cell = header_row.cells[idx]
+        set_cell_shading(cell, header_fill)
+        p = cell.paragraphs[0]
+        set_paragraph_spacing(p, after=0, line=1.15)
+        run = p.add_run(header)
+        set_run_font(run, size=10.5, color=INK, bold=True)
+
+    for row in rows:
+        cells = table.add_row().cells
+        for idx, value in enumerate(row):
+            p = cells[idx].paragraphs[0]
+            set_paragraph_spacing(p, after=0, line=1.15)
+            run = p.add_run(value)
+            set_run_font(run, size=10.5, color=INK)
+
+    set_table_geometry(table, widths)
+    doc.add_paragraph().paragraph_format.space_after = Pt(4)
+
+
+def add_steps(doc, steps):
+    for step in steps:
+        add_number(doc, step)
+
+
+def add_bullets(doc, items):
+    for item in items:
+        add_bullet(doc, item)
 
 
 def build_doc():
     doc = Document()
     configure_styles(doc)
     add_header_footer(doc)
-    add_cover(doc)
+    add_title(doc)
 
-    add_heading(doc, "一分钟快速上手", 1)
-    quick_steps = [
-        "打开中转站网址，例如：https://你的中转站域名",
-        "注册账号并登录后台。",
-        "进入「兑换码」「充值」或「余额」页面，输入兑换码并确认兑换。",
-        "进入「API Key」「令牌」或「密钥」页面，创建并复制 API Key。",
-        "找到平台提供的 API URL，通常类似：https://你的中转站域名/v1",
-        "在工具里填写 Base URL、API Key 和模型名。",
-        "发送一句「你好」，能收到回复就说明配置成功。",
-    ]
-    for step in quick_steps:
-        add_number(doc, step)
-
-    add_heading(doc, "第一步：注册账号", 1)
-    for step in [
-        "打开中转站官网或客服提供的注册链接。",
-        "点击「注册」「Sign up」或「创建账号」。",
-        "按页面要求填写邮箱、手机号或用户名。",
-        "设置密码，建议不低于 8 位，并混合字母、数字和符号。",
-        "如果页面要求验证码，请按提示完成邮箱验证、短信验证或图形验证。",
-        "注册成功后，回到登录页输入账号和密码登录。",
-    ]:
-        add_number(doc, step)
-    add_para(doc, "注册完成后，建议先确认后台能看到「余额」「兑换码」和「API Key」等入口。")
-
-    add_heading(doc, "第二步：使用兑换码兑换额度", 1)
-    add_para(doc, "兑换码用于把平台赠送或购买的额度充入你的账号。")
-    for step in [
-        "登录中转站后台。",
-        "找到「兑换码」「礼品码」「充值」「余额」或类似入口。",
-        "将兑换码完整复制进去。",
-        "点击「兑换」「确认」或「提交」。",
-        "回到「余额」或「用量」页面，确认额度是否到账。",
-    ]:
-        add_number(doc, step)
     add_callout(
         doc,
-        "兑换注意事项",
-        "兑换码可能区分大小写；不要多复制空格；每个兑换码通常只能使用一次。如果提示已使用、已过期或不存在，请截图联系平台客服。",
+        "这不是通用 API 教程",
+        "本文按我们网站的实际页面来写：注册 /register，登录 /login，购买 /purchase，兑换 /redeem，API 密钥 /keys，用量 /usage，可用渠道 /available-channels，渠道状态 /monitor。",
     )
 
-    add_heading(doc, "第三步：理解 URL 和 Key", 1)
-    add_para(doc, "调用大模型时，最常用的是两个信息：URL 和 Key。")
-    add_table(
-        doc,
-        ["名称", "你需要填写什么", "作用"],
-        [
-            ("API URL / Base URL", "通常类似 https://你的中转站域名/v1", "告诉工具把请求发到哪里"),
-            ("API Key / Token / 密钥", "通常类似 sk-xxxxxxxx", "证明这次请求属于你的账号"),
-            ("Model / 模型", "例如 gpt-5.5，或后台模型列表里的其他模型", "告诉平台你想调用哪个模型"),
-        ],
-        [2300, 3900, 3160],
-    )
-    for item in [
-        "不要把 API Key 发到微信群、论坛、公开代码仓库或截图里。",
-        "如果怀疑 Key 泄露，立刻在后台删除旧 Key，并创建新 Key。",
-        "团队多人使用时，建议给不同成员或工具创建不同 Key。",
-    ]:
-        add_bullet(doc, item)
+    add_heading(doc, "适合谁使用", 1)
+    add_bullets(doc, [
+        "想在国内网络环境下稳定调用大模型 API 的个人或团队。",
+        "想用 OpenAI、ChatGPT-5.5 / GPT-5.5、Claude、Gemini 等模型，但不想自己处理账号、网络和接口维护的人。",
+        "想把大模型接入 Cursor、Codex CLI、Claude Code、Gemini CLI、OpenCode、自己的程序或自动化脚本的人。",
+        "想用余额、订阅、兑换码和 API Key 管理团队用量的人。",
+    ])
 
-    add_heading(doc, "第四步：创建并复制 API Key", 1)
-    for step in [
-        "进入「API Key」「令牌」「密钥」或「开发者」页面。",
-        "点击「创建 Key」「新建密钥」或类似按钮。",
-        "给 Key 起一个容易识别的名字，例如 my-laptop、cursor-work 或 server-test。",
-        "复制新生成的 API Key，并保存到安全位置。",
-        "如果后台只在创建时显示一次 Key，请务必当场复制保存。",
-    ]:
-        add_number(doc, step)
-
-    add_heading(doc, "第五步：在工具里填写 URL 和 Key", 1)
-    add_para(doc, "大多数支持 OpenAI 兼容接口的工具都会有类似配置项：API Key、Base URL、Endpoint 和 Model。")
-    add_table(
-        doc,
-        ["配置项", "示例填写"],
-        [
-            ("Base URL / API URL", "https://你的中转站域名/v1"),
-            ("API Key", "sk-你的APIKey"),
-            ("Model", "gpt-5.5 或后台模型列表中的模型 ID"),
-        ],
-        [2600, 6760],
-    )
-    add_para(doc, "如果工具要求填写完整接口地址，可以填写：")
-    add_code(doc, "https://你的中转站域名/v1/chat/completions")
-    add_para(doc, "如果工具要求填写 Base URL，通常只填写到 /v1：")
-    add_code(doc, "https://你的中转站域名/v1")
-
-    add_heading(doc, "PowerShell 测试示例", 1)
-    add_para(doc, "把下面命令里的域名、Key 和模型名换成你自己的：")
-    add_code(
-        doc,
-        '$body = @{ model = "gpt-5.5"; messages = @(@{ role = "user"; content = "你好，请用一句话介绍你自己。" }) } | ConvertTo-Json -Depth 5',
-    )
-    add_code(
-        doc,
-        'Invoke-RestMethod -Uri "https://你的中转站域名/v1/chat/completions" -Method Post -ContentType "application/json" -Headers @{ Authorization = "Bearer sk-你的APIKey" } -Body $body',
-    )
-
-    add_heading(doc, "Python 调用示例", 1)
-    add_code(doc, "from openai import OpenAI")
-    add_code(doc, 'client = OpenAI(api_key="sk-你的APIKey", base_url="https://你的中转站域名/v1")')
-    add_code(
-        doc,
-        'response = client.chat.completions.create(model="gpt-5.5", messages=[{"role": "user", "content": "你好，请用一句话介绍你自己。"}])',
-    )
-    add_code(doc, "print(response.choices[0].message.content)")
-
-    add_heading(doc, "使用中转站的优势", 1)
+    add_heading(doc, "我们中转站的优势", 1)
     advantages = [
-        ("不用自己折腾 VPN 或海外网络", "很多用户直接访问海外大模型服务时，会遇到网络不稳定、连接失败或配置复杂的问题。使用中转站后，你只需要访问平台提供的 API URL，通常不需要自己单独准备 VPN 或海外网络环境。"),
-        ("一个入口调用多种大模型", "中转站可以把多个模型入口集中到一个后台里。你可以按需使用 OpenAI 的 ChatGPT-5.5 / GPT-5.5 系列，以及平台支持的其他模型。实际开放哪些模型、模型 ID 怎么写、价格是多少，请以后台模型列表为准。"),
-        ("对 OpenAI 兼容工具更友好", "很多开发工具、聊天客户端、IDE 插件和自动化工具都支持 OpenAI 兼容接口。只要工具允许填写自定义 Base URL 和 API Key，通常就可以接入中转站。"),
-        ("余额、用量和成本更清楚", "后台通常可以查看余额、充值记录、兑换记录和调用用量。这样你能知道额度花在哪里，也能更容易控制成本。"),
-        ("更适合团队和多工具使用", "你可以为不同工具或成员创建不同 API Key。后续如果某个 Key 不再使用，可以单独删除，不影响其他 Key。"),
-        ("降低账号和接口维护成本", "用户不用分别研究多个模型厂商的账号、充值、接口格式和网络配置。中转站会把常用能力集中起来，让新用户更容易上手。"),
+        ("免 VPN，国内环境也能更省心调用", "客户只需要访问我们的网站和 API 地址，请求由中转站转发到上游模型服务，日常调用更省心。"),
+        ("一个 API Key，接入多个模型和工具", "在「API 密钥」页面创建一个 Key 后，就可以根据后台开放的渠道调用不同模型，例如 OpenAI / ChatGPT-5.5、Claude、Gemini、Antigravity 等。"),
+        ("不需要自己维护上游账号和服务器", "我们负责上游账号、调度、计费、负载均衡和接口转发，客户不用从零部署 Sub2API，也不用自己处理服务器运维。"),
+        ("用量清楚，可控成本", "后台可以查看余额、兑换记录、密钥用量、模型用量和订单记录，还能给 Key 设置额度、有效期、IP 限制和速率限制。"),
+        ("适合开发者和团队", "一个账号可以创建多个 API Key，按工具、项目或成员区分，方便排查和管理。"),
     ]
     for title, body in advantages:
         add_heading(doc, title, 2)
         add_para(doc, body)
 
+    add_heading(doc, "第 1 步：打开我们的网站", 1)
+    add_steps(doc, [
+        "打开我们提供的中转站网址：https://你的中转站域名",
+        "如果还没有账号，进入注册页：https://你的中转站域名/register",
+        "如果已有账号，进入登录页：https://你的中转站域名/login",
+    ])
+    add_table(
+        doc,
+        ["页面", "地址", "用途"],
+        [
+            ("控制台", "/dashboard", "查看账户概览和快捷入口"),
+            ("API 密钥", "/keys", "创建、复制、管理 API Key"),
+            ("用量记录", "/usage", "查看请求、模型和费用明细"),
+            ("可用渠道", "/available-channels", "查看当前开放的模型渠道"),
+            ("渠道状态", "/monitor", "查看渠道可用性和延迟"),
+            ("充值/订阅", "/purchase", "购买余额或订阅套餐"),
+            ("兑换码", "/redeem", "使用兑换码兑换余额、并发或试用权限"),
+            ("我的订单", "/orders", "查看充值和订阅订单"),
+        ],
+        [1800, 2600, 4960],
+        header_fill=LIGHT_GRAY,
+    )
+
+    add_heading(doc, "第 2 步：注册账号", 1)
+    add_steps(doc, [
+        "进入 /register 页面。",
+        "输入邮箱并设置密码。",
+        "如果页面显示邀请码，请填写我们提供的邀请码。",
+        "如果页面显示优惠码，可填写我们提供的优惠码，享受活动赠送额度。",
+        "如果页面要求验证，请完成邮箱验证或人机验证。",
+        "点击「创建账号」。注册成功后进入控制台。",
+    ])
+
+    add_heading(doc, "第 3 步：购买套餐或兑换额度", 1)
+    add_heading(doc, "方式 A：在线购买", 2)
+    add_steps(doc, [
+        "进入 /purchase 页面。",
+        "选择「充值」或「订阅」。",
+        "如果是充值，输入充值金额；如果是订阅，选择适合你的模型渠道或套餐。",
+        "选择支付方式，创建订单并完成支付。",
+        "支付完成后，到 /orders 或控制台确认到账。",
+    ])
+
+    add_heading(doc, "方式 B：使用兑换码", 2)
+    add_steps(doc, [
+        "进入 /redeem 页面。",
+        "查看页面顶部的当前余额和并发数。",
+        "在「兑换码」输入框粘贴兑换码。",
+        "点击「兑换」。",
+        "页面显示「兑换成功」后，确认新余额、新并发或订阅权限。",
+    ])
+    add_callout(
+        doc,
+        "兑换码说明",
+        "每个兑换码通常只能使用一次，并且区分大小写。兑换码可以增加余额、并发数或试用/订阅权限。失败时请检查空格、过期和已使用状态，并截图联系客服。",
+    )
+
+    add_heading(doc, "第 4 步：创建 API 密钥", 1)
+    add_steps(doc, [
+        "进入 /keys 页面并点击「创建密钥」。",
+        "给密钥起一个好识别的名字，例如 codex-cli、cursor-work、server-test。",
+        "选择一个可用分组。分组决定这个 Key 走哪个模型渠道和费率规则。",
+        "按需设置自定义密钥、IP 限制、额度限制、速率限制和密钥有效期。",
+        "保存后，在密钥列表里复制 API Key。",
+    ])
+    add_callout(
+        doc,
+        "Key 安全提醒",
+        "API Key 等同于你的额度使用凭证。不要发到群里，不要贴到公开代码仓库，不要在截图中完整展示。",
+    )
+
+    add_heading(doc, "第 5 步：复制 API 地址", 1)
+    add_para(doc, "在 /keys 页面顶部，网站会展示 API 地址信息。如果配置了多个自定义端点，也会在这里显示。")
+    add_table(
+        doc,
+        ["配置项", "你应该填写"],
+        [
+            ("Base URL / API URL", "网站展示的 API Base URL，通常形如 https://你的中转站域名/v1"),
+            ("API Key", "/keys 页面复制出来的密钥"),
+            ("Model", "/available-channels 或工具提示中展示的模型名"),
+        ],
+        [2600, 6760],
+    )
+    add_code(doc, "完整接口地址示例：https://你的中转站域名/v1/chat/completions")
+    add_code(doc, "Base URL 示例：https://你的中转站域名/v1")
+
+    add_heading(doc, "第 6 步：使用「使用密钥」快速配置工具", 1)
+    add_para(doc, "在 /keys 页面，每个 Key 后面都有「使用密钥」按钮。点击后，网站会根据该 Key 所属分组展示对应客户端的配置示例。")
+    add_bullets(doc, [
+        "OpenAI / ChatGPT-5.5 渠道：Codex CLI、Codex CLI WebSocket、OpenCode 等。",
+        "Claude 渠道：Claude Code、OpenCode 等。",
+        "Gemini 渠道：Gemini CLI、OpenCode 等。",
+        "Antigravity 渠道：Claude Code、Gemini CLI、OpenCode 等。",
+    ])
+
+    add_heading(doc, "OpenAI 兼容接口调用示例", 1)
+    add_para(doc, "请把域名、Key 和模型替换成你网站后台实际显示的内容。")
+    add_heading(doc, "PowerShell 测试", 2)
+    add_code(doc, '$body = @{ model = "gpt-5.5"; messages = @(@{ role = "user"; content = "你好，请用一句话介绍你自己。" }) } | ConvertTo-Json -Depth 5')
+    add_code(doc, 'Invoke-RestMethod -Uri "https://你的中转站域名/v1/chat/completions" -Method Post -ContentType "application/json" -Headers @{ Authorization = "Bearer sk-你的APIKey" } -Body $body')
+    add_heading(doc, "Python 示例", 2)
+    add_code(doc, 'from openai import OpenAI')
+    add_code(doc, 'client = OpenAI(api_key="sk-你的APIKey", base_url="https://你的中转站域名/v1")')
+    add_code(doc, 'response = client.chat.completions.create(model="gpt-5.5", messages=[{"role": "user", "content": "你好，请用一句话介绍你自己。"}])')
+    add_code(doc, 'print(response.choices[0].message.content)')
+    add_callout(
+        doc,
+        "模型名以后台为准",
+        "gpt-5.5 只是示例模型名。客户能使用哪些模型，请以 /available-channels 和后台模型列表为准。",
+    )
+
+    add_heading(doc, "查看用量和余额", 1)
+    add_bullets(doc, [
+        "/dashboard：账户概览、余额、快捷入口。",
+        "/usage：请求记录、模型用量、费用明细。",
+        "/keys：每个 API Key 的今日用量、总用量、额度进度和状态。",
+        "/key-usage：不登录也可用 API Key 查询用量，适合给团队成员自查。",
+        "/orders：查看充值或订阅订单。",
+        "/redeem：查看兑换历史。",
+    ])
+
     add_heading(doc, "常见问题", 1)
     faqs = [
-        ("兑换码输入后提示无效怎么办？", "先检查是否复制错字符、是否多了空格、是否大小写错误。如果仍然无效，截图联系平台客服。"),
-        ("为什么提示余额不足？", "可能是兑换码没有到账、余额已经用完，或当前模型单价较高。请先检查后台余额和用量记录。"),
-        ("为什么提示 Key 错误或 401？", "通常是 API Key 复制错了、Key 已删除、Key 前后有空格，或者请求头没有写成 Authorization: Bearer sk-你的APIKey。"),
-        ("为什么提示模型不存在？", "模型名必须和后台模型列表一致。请进入模型列表复制模型 ID，不要凭感觉手动输入。"),
-        ("为什么工具连不上？", "请检查 Base URL 是否填写到 /v1，域名是否写错，网络是否能打开中转站后台。如果工具有代理设置，也请检查代理是否影响请求。"),
-        ("Key 可以发给别人吗？", "不建议。Key 等同于你的额度使用凭证。别人拿到 Key 后产生的消耗，会计入你的账号。"),
+        ("兑换码不能用怎么办？", "确认兑换码没有多复制空格、没有大小写错误、没有过期，也没有被使用过。如果仍然失败，请截图发给客服。"),
+        ("余额到账了，为什么工具还是不能调用？", "请检查 /keys 页面是否已经创建 API Key，并确认 Key 已分配分组。没有分组的 Key 不能正确展示对应使用配置。"),
+        ("为什么提示 401 或 Key 无效？", "通常是 API Key 复制错了、Key 已禁用、Key 已删除、Key 过期，或者请求头没有写成 Authorization: Bearer sk-你的APIKey。"),
+        ("为什么提示模型不存在？", "模型名必须和后台开放的模型名一致。请在 /available-channels 或「使用密钥」弹窗里复制模型名，不要手打猜测。"),
+        ("为什么请求超时或失败？", "可以先看 /monitor 渠道状态。如果某个渠道临时异常，可以切换到其他可用渠道，或联系客服确认当前模型状态。"),
+        ("我需要 VPN 吗？", "正常使用我们的网站和 API 中转服务时，通常不需要你自己准备 VPN。你只需要能访问我们提供的网站域名和 API 地址。"),
     ]
     for question, answer in faqs:
         add_heading(doc, question, 2)
         add_para(doc, answer)
 
-    add_heading(doc, "安全提醒", 1)
-    for item in [
-        "不要公开 API Key。",
-        "不要把 Key 写进公开仓库。",
-        "不要在截图里暴露 Key。",
-        "定期查看用量记录，发现异常及时停用旧 Key。",
-        "只在可信工具里填写 URL 和 Key。",
-        "不要用平台进行违法、违规或侵犯他人权益的内容生成与调用。",
-    ]:
-        add_bullet(doc, item)
+    add_heading(doc, "给客服排查时请提供", 1)
+    add_steps(doc, [
+        "注册邮箱或账号。",
+        "当前使用的网址。",
+        "兑换码失败截图，或订单号。",
+        "/keys 页面密钥名称和所属分组截图。",
+        "工具里填写的 Base URL 截图。",
+        "报错截图。",
+        "大概发生时间。",
+    ])
+    add_para(doc, "截图时请遮挡 API Key，只保留前后 4 到 6 位用于识别即可。")
 
-    add_heading(doc, "给客服或管理员的信息", 1)
-    add_para(doc, "如果用户无法完成配置，可以让用户提供以下信息，方便排查。请提醒用户：截图时务必遮挡 API Key，只保留前后少量字符用于识别即可。")
-    for item in [
-        "注册账号或邮箱。",
-        "兑换码截图或兑换提示截图。",
-        "后台余额截图。",
-        "工具里的 Base URL 截图。",
-        "工具里的模型名截图。",
-        "报错信息截图。",
-    ]:
-        add_number(doc, item)
+    add_heading(doc, "安全使用提醒", 1)
+    add_bullets(doc, [
+        "不要公开 API Key。",
+        "不要把 Key 写进公开 GitHub 仓库。",
+        "不要在截图、直播、录屏里完整展示 Key。",
+        "给服务器使用的 Key 建议设置 IP 白名单。",
+        "给临时测试使用的 Key 建议设置有效期和额度限制。",
+        "发现异常用量时，先禁用旧 Key，再联系平台客服。",
+        "不要使用本服务生成、传播或处理违法违规内容。",
+    ])
 
     doc.save(OUT)
 
