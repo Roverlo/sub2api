@@ -137,7 +137,7 @@
     <div class="mb-3 flex items-center justify-between">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.platformBreakdown') }}</h3>
       <span class="text-xs text-gray-500 dark:text-gray-400">
-        {{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}
+        {{ t('dashboard.platformCount', { count: platformCards.length }) }}
       </span>
     </div>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -261,6 +261,15 @@ const sortedPlatforms = computed(() => {
   return [...list].sort((a, b) => b.total_actual_cost - a.total_actual_cost)
 })
 
+const availablePlatformSet = computed(() => {
+  if (Array.isArray(props.stats?.available_platforms)) {
+    return new Set(props.stats.available_platforms.filter(Boolean))
+  }
+  return new Set((props.stats?.by_platform ?? []).map((item) => item.platform).filter(Boolean))
+})
+
+const hasConfiguredPlatforms = computed(() => Array.isArray(props.stats?.available_platforms))
+
 // 处理"各平台之和 < 总值"的差值：后端按平台聚合时过滤了无法归属平台的行
 // （group 与 account 都缺 platform）。这里把差值作为"其他"卡片显式展示，
 // 避免 Row 1 总值与 Row 3 平台拆分加总对不上、用户困惑。
@@ -274,9 +283,7 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
   const byQuota = new Map<string, PlatformQuotaItem>()
   for (const q of props.platformQuotas ?? []) byQuota.set(q.platform, q)
 
-  // union 平台集合。后端 by_platform / quota 接口均不会返回 platform='__other__'，
-  // 无需显式排除；__other__ 由下方差值补差逻辑单独追加。
-  const platforms = new Set<string>([...byPlat.keys(), ...byQuota.keys()])
+  const platforms = availablePlatformSet.value
 
   const PLATFORM_ORDER = ['anthropic', 'openai', 'gemini', 'antigravity']
   const cards: FusedPlatformCard[] = []
@@ -311,7 +318,7 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
   const diffTotal = Math.max(0, total - sumTotal)
   const diffToday = Math.max(0, today - sumToday)
 
-  if (diffTotal > OTHER_THRESHOLD || diffToday > OTHER_THRESHOLD) {
+  if (!hasConfiguredPlatforms.value && (diffTotal > OTHER_THRESHOLD || diffToday > OTHER_THRESHOLD)) {
     cards.push({
       platform: '__other__',
       total_actual_cost: diffTotal,

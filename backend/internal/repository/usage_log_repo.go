@@ -2579,7 +2579,42 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 		return nil, err
 	}
 
+	availablePlatforms, err := r.listActiveAccountPlatforms(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stats.AvailablePlatforms = availablePlatforms
+
 	return stats, nil
+}
+
+func (r *usageLogRepository) listActiveAccountPlatforms(ctx context.Context) ([]string, error) {
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT DISTINCT platform
+		FROM accounts
+		WHERE status = $1
+		  AND deleted_at IS NULL
+		  AND platform IS NOT NULL
+		  AND platform <> ''
+		ORDER BY platform ASC
+	`, service.StatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	platforms := make([]string, 0, 4)
+	for rows.Next() {
+		var platform string
+		if err := rows.Scan(&platform); err != nil {
+			return nil, err
+		}
+		platforms = append(platforms, platform)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return platforms, nil
 }
 
 // getPerformanceStatsByAPIKey 获取指定 API Key 的 RPM 和 TPM（近5分钟平均值）

@@ -246,6 +246,9 @@ type UserDashboardStats struct {
 
 	// 按"有效平台"维度拆分（与 ops 路径口径一致：group.platform 优先，否则 account.platform）
 	ByPlatform []PlatformDashboardStats `json:"by_platform,omitempty"`
+
+	// 管理员后台已对接的账号平台列表，用于用户侧仪表盘显示边界。
+	AvailablePlatforms []string `json:"available_platforms"`
 }
 
 // PlatformDashboardStats 单个平台的用量明细。

@@ -48,6 +48,7 @@ export interface UserDashboardStats {
   rpm: number // 近5分钟平均每分钟请求数
   tpm: number // 近5分钟平均每分钟Token数
   by_platform?: PlatformDashboardStats[]
+  available_platforms?: string[]
 }
 
 export interface TrendParams {

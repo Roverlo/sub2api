@@ -336,7 +336,9 @@ describe('EmailVerifyView', () => {
       email: 'fresh@example.com',
       password: 'secret-123',
       verify_code: '123456',
-      aff_code: 'AFF123',
+      invitation_code: undefined,
+      adopt_display_name: undefined,
+      adopt_avatar: undefined,
     })
     expect(persistOAuthTokenContextMock).toHaveBeenCalledWith({
       access_token: 'oauth-access-token',
@@ -447,9 +449,9 @@ describe('EmailVerifyView', () => {
       password: 'secret-456',
       verify_code: '654321',
       turnstile_token: undefined,
-      promo_code: 'PROMO',
       invitation_code: 'INVITE',
     })
+    expect(registerMock.mock.calls[0][0]).not.toHaveProperty('promo_code')
     expect(apiClientPostMock).not.toHaveBeenCalled()
     expect(pushMock).toHaveBeenCalledWith('/dashboard')
   })

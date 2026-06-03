@@ -846,7 +846,12 @@ func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 func (s *UsageLogRepoSuite) TestGetUserDashboardStats() {
 	user := mustCreateUser(s.T(), s.client, &service.User{Email: "userdash@test.com"})
 	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-userdash", Name: "k"})
-	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-userdash"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-userdash", Platform: service.PlatformOpenAI})
+	mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:     "acc-userdash-disabled",
+		Platform: service.PlatformGemini,
+		Status:   service.StatusDisabled,
+	})
 
 	s.createUsageLog(user, apiKey, account, 10, 20, 0.5, time.Now())
 
@@ -854,6 +859,7 @@ func (s *UsageLogRepoSuite) TestGetUserDashboardStats() {
 	s.Require().NoError(err, "GetUserDashboardStats")
 	s.Require().Equal(int64(1), stats.TotalAPIKeys)
 	s.Require().Equal(int64(1), stats.TotalRequests)
+	s.Require().Equal([]string{service.PlatformOpenAI}, stats.AvailablePlatforms)
 }
 
 // --- GetAccountTodayStats ---
