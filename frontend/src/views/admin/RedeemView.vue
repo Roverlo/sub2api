@@ -8,28 +8,8 @@
           >
             <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div
-                class="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.3fr)_160px_160px_minmax(240px,.9fr)]"
+                class="grid flex-1 grid-cols-1 gap-3 md:grid-cols-[minmax(180px,220px)_minmax(260px,360px)]"
               >
-                <div class="relative">
-                  <Icon
-                    name="search"
-                    size="sm"
-                    class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-400"
-                  />
-                  <input
-                    v-model="searchQuery"
-                    type="search"
-                    :aria-label="t('admin.redeem.searchCodes')"
-                    :placeholder="t('admin.redeem.searchCodes')"
-                    class="input pl-10"
-                    @input="handleSearch"
-                  />
-                </div>
-                <Select
-                  v-model="filters.type"
-                  :options="filterTypeOptions"
-                  @change="handleFilterChange"
-                />
                 <Select
                   v-model="filters.status"
                   :options="filterStatusOptions"
@@ -117,7 +97,7 @@
                   type="button"
                   :class="[
                     'flex min-w-32 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
-                    isExactValueFilter(bucket.value)
+                    isExactValueFilter(bucket.value, bucket.type)
                       ? 'border-primary-500 bg-primary-50 text-primary-800 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-200'
                       : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-primary-200 hover:bg-white hover:text-primary-700 dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-300 dark:hover:border-primary-700 dark:hover:bg-dark-800'
                   ]"
@@ -908,14 +888,6 @@ const typeOptions = computed(() => [
   { value: 'invitation', label: t('admin.redeem.invitation') }
 ])
 
-const filterTypeOptions = computed(() => [
-  { value: '', label: t('admin.redeem.allTypes') },
-  { value: 'balance', label: t('admin.redeem.balance') },
-  { value: 'concurrency', label: t('admin.redeem.concurrency') },
-  { value: 'subscription', label: t('admin.redeem.subscription') },
-  { value: 'invitation', label: t('admin.redeem.invitation') }
-])
-
 const filterStatusOptions = computed(() => [
   { value: '', label: t('admin.redeem.allStatus') },
   { value: 'unused', label: t('admin.redeem.unused') },
@@ -942,7 +914,6 @@ const codes = ref<RedeemCode[]>([])
 const loading = ref(false)
 const generating = ref(false)
 const batchUpdating = ref(false)
-const searchQuery = ref('')
 const filters = reactive({
   type: '',
   status: '',
@@ -1037,7 +1008,6 @@ const currentValuePresets = computed(() => {
 
 const hasActiveFilters = computed(
   () =>
-    Boolean(searchQuery.value.trim()) ||
     Boolean(filters.type) ||
     Boolean(filters.status) ||
     Boolean(filters.value_min.trim()) ||
@@ -1090,10 +1060,10 @@ const selectedValueSummary = computed(() => {
     .join(' / ')
 })
 
-const isExactValueFilter = (value: number) => {
+const isExactValueFilter = (value: number, type?: RedeemCodeType) => {
   const minValue = parseOptionalNumber(filters.value_min)
   const maxValue = parseOptionalNumber(filters.value_max)
-  return minValue === value && maxValue === value
+  return minValue === value && maxValue === value && (!filters.type || filters.type === type)
 }
 
 const handleFilterChange = () => {
@@ -1102,8 +1072,9 @@ const handleFilterChange = () => {
 }
 
 const handleValueFilterInput = () => {
-  clearTimeout(searchTimeout)
-  searchTimeout = setTimeout(() => {
+  filters.type = ''
+  clearTimeout(valueFilterTimeout)
+  valueFilterTimeout = setTimeout(() => {
     pagination.page = 1
     loadCodes()
   }, 300)
@@ -1119,7 +1090,6 @@ const applyExactValueFilter = (value: number, type?: RedeemCodeType) => {
 }
 
 const resetFilters = () => {
-  searchQuery.value = ''
   filters.type = ''
   filters.status = ''
   filters.value_min = ''
@@ -1155,7 +1125,6 @@ const buildRedeemQueryFilters = () => {
   return {
     type: (filters.type || undefined) as RedeemCodeType | undefined,
     status: (filters.status || undefined) as 'used' | 'expired' | 'unused' | 'disabled' | undefined,
-    search: searchQuery.value || undefined,
     value_min: valueMin,
     value_max: valueMax,
     sort_by: sortState.sort_by,
@@ -1206,14 +1175,7 @@ const loadCodes = async () => {
   }
 }
 
-let searchTimeout: ReturnType<typeof setTimeout>
-const handleSearch = () => {
-  clearTimeout(searchTimeout)
-  searchTimeout = setTimeout(() => {
-    pagination.page = 1
-    loadCodes()
-  }, 300)
-}
+let valueFilterTimeout: ReturnType<typeof setTimeout>
 
 const handlePageChange = (page: number) => {
   pagination.page = page
@@ -1495,7 +1457,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  clearTimeout(searchTimeout)
+  clearTimeout(valueFilterTimeout)
   abortController?.abort()
 })
 </script>
