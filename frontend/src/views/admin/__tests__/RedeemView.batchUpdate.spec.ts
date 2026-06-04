@@ -99,7 +99,7 @@ const SelectStub = {
   `
 }
 
-describe('admin RedeemView batch update', () => {
+describe('admin RedeemView selection actions', () => {
   beforeEach(() => {
     localStorage.clear()
     document.body.innerHTML = ''
@@ -145,7 +145,7 @@ describe('admin RedeemView batch update', () => {
     getAllGroups.mockResolvedValue([])
   })
 
-  it('submits only checked fields for selected redeem codes', async () => {
+  it('does not expose batch update actions for selected redeem codes', async () => {
     const wrapper = mount(RedeemView, {
       attachTo: document.body,
       global: {
@@ -168,20 +168,11 @@ describe('admin RedeemView batch update', () => {
 
     await flushPromises()
     await wrapper.findAll('[data-test="select-code"]')[0].setValue(true)
-    await wrapper.get('[data-test="batch-update-open"]').trigger('click')
     await flushPromises()
 
-    await wrapper.get('[data-test="batch-field-status"]').setValue(true)
-    await wrapper.get('[data-test="batch-status-select"]').setValue('disabled')
-    await wrapper.get('[data-test="batch-field-notes"]').setValue(true)
-    await wrapper.get('[data-test="batch-notes-input"]').setValue('maintenance')
-    await wrapper.get('[data-test="batch-update-form"]').trigger('submit')
-    await flushPromises()
-
-    expect(batchUpdateRedeemCodes).toHaveBeenCalledWith([1], {
-      status: 'disabled',
-      notes: 'maintenance'
-    })
-    expect(showSuccess).toHaveBeenCalledWith('admin.redeem.batchUpdateSuccess')
+    expect(wrapper.find('[data-test="batch-update-open"]').exists()).toBe(false)
+    expect(document.body.textContent).not.toContain('admin.redeem.batchUpdate')
+    expect(document.body.textContent).not.toContain('admin.redeem.batchUpdateTitle')
+    expect(batchUpdateRedeemCodes).not.toHaveBeenCalled()
   })
 })

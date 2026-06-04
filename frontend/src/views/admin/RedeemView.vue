@@ -60,16 +60,6 @@
                 >
                   <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
                 </button>
-                <button
-                  data-test="batch-update-open"
-                  type="button"
-                  class="btn btn-secondary"
-                  :disabled="selectedCount === 0 || batchUpdating"
-                  @click="openBatchUpdateDialog"
-                >
-                  <Icon name="edit" size="md" />
-                  {{ t('admin.redeem.batchUpdate') }}
-                </button>
                 <button type="button" class="btn btn-primary" @click="showGenerateDialog = true">
                   <Icon name="plus" size="sm" />
                   {{ t('admin.redeem.generateCodes') }}
@@ -135,20 +125,14 @@
                 {{ selectedValueSummary }}
               </span>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                @click="clearSelectedCodes"
-              >
-                <Icon name="x" size="sm" />
-                {{ t('admin.redeem.clearSelection') }}
-              </button>
-              <button type="button" class="btn btn-primary btn-sm" @click="openBatchUpdateDialog">
-                <Icon name="edit" size="sm" />
-                {{ t('admin.redeem.batchUpdate') }}
-              </button>
-            </div>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              @click="clearSelectedCodes"
+            >
+              <Icon name="x" size="sm" />
+              {{ t('admin.redeem.clearSelection') }}
+            </button>
           </section>
         </div>
       </template>
@@ -546,117 +530,6 @@
       </div>
     </Teleport>
 
-    <!-- Batch Update Dialog -->
-    <Teleport to="body">
-      <div
-        v-if="showBatchUpdateDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      >
-        <div class="fixed inset-0 bg-black/50" @click="closeBatchUpdateDialog"></div>
-        <div
-          class="relative z-10 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-dark-800"
-        >
-          <h2 class="mb-1 text-lg font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.redeem.batchUpdateTitle') }}
-          </h2>
-          <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">
-            {{ t('admin.redeem.selectedCount', { count: selectedCount }) }}
-          </p>
-
-          <form data-test="batch-update-form" class="space-y-4" @submit.prevent="handleBatchUpdate">
-            <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  data-test="batch-field-status"
-                  v-model="batchUpdateForm.update_status"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                {{ t('admin.redeem.batchFields.status') }}
-              </label>
-              <Select
-                v-if="batchUpdateForm.update_status"
-                v-model="batchUpdateForm.status"
-                data-test="batch-status-select"
-                :options="batchStatusOptions"
-              />
-            </div>
-
-            <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="batchUpdateForm.update_expires_at"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                {{ t('admin.redeem.batchFields.expiresAt') }}
-              </label>
-              <template v-if="batchUpdateForm.update_expires_at">
-                <Select v-model="batchUpdateForm.expires_mode" :options="batchExpiryModeOptions" />
-                <input
-                  v-if="batchUpdateForm.expires_mode === 'custom'"
-                  v-model="batchUpdateForm.expires_at_local"
-                  type="datetime-local"
-                  class="input"
-                />
-              </template>
-            </div>
-
-            <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  data-test="batch-field-notes"
-                  v-model="batchUpdateForm.update_notes"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                {{ t('admin.redeem.batchFields.notes') }}
-              </label>
-              <textarea
-                v-if="batchUpdateForm.update_notes"
-                data-test="batch-notes-input"
-                v-model="batchUpdateForm.notes"
-                rows="3"
-                class="input"
-                :placeholder="t('admin.redeem.batchNotesPlaceholder')"
-              ></textarea>
-            </div>
-
-            <div class="space-y-2">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  v-model="batchUpdateForm.update_group_id"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                {{ t('admin.redeem.batchFields.group') }}
-              </label>
-              <Select
-                v-if="batchUpdateForm.update_group_id"
-                v-model="batchUpdateForm.group_id"
-                :options="batchGroupOptions"
-                :placeholder="t('admin.redeem.selectGroupPlaceholder')"
-              />
-            </div>
-
-            <div class="flex justify-end gap-3 pt-2">
-              <button type="button" @click="closeBatchUpdateDialog" class="btn btn-secondary">
-                {{ t('common.cancel') }}
-              </button>
-              <button
-                data-test="batch-update-submit"
-                type="submit"
-                :disabled="batchUpdating"
-                class="btn btn-primary"
-              >
-                {{ batchUpdating ? t('common.submitting') : t('admin.redeem.batchUpdate') }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </Teleport>
-
     <!-- Generated Codes Result Dialog -->
     <Teleport to="body">
       <div v-if="showResultDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -758,8 +631,7 @@ import type {
   RedeemCodeType,
   Group,
   GroupPlatform,
-  SubscriptionType,
-  BatchUpdateRedeemCodeFields
+  SubscriptionType
 } from '@/types'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -803,11 +675,6 @@ const subscriptionGroupOptions = computed(() => {
       rate: g.rate_multiplier
     }))
 })
-
-const batchGroupOptions = computed(() => [
-  { value: null, label: t('admin.redeem.clearGroup') },
-  ...subscriptionGroupOptions.value
-])
 
 const generatedCodesText = computed(() => {
   return generatedCodes.value.map((code) => code.code).join('\n')
@@ -892,16 +759,6 @@ const filterStatusOptions = computed(() => [
   { value: 'disabled', label: t('admin.redeem.status.disabled') }
 ])
 
-const batchStatusOptions = computed(() => [
-  { value: 'unused', label: t('admin.redeem.status.unused') },
-  { value: 'disabled', label: t('admin.redeem.status.disabled') }
-])
-
-const batchExpiryModeOptions = computed(() => [
-  { value: 'clear', label: t('admin.redeem.neverExpires') },
-  { value: 'custom', label: t('admin.redeem.customExpiry') }
-])
-
 const balanceValuePresets = [5, 10, 20, 50, 100, 200]
 const concurrencyValuePresets = [1, 2, 5, 10, 20]
 const countPresets = [1, 5, 10, 20, 50, 100]
@@ -909,7 +766,6 @@ const countPresets = [1, 5, 10, 20, 50, 100]
 const codes = ref<RedeemCode[]>([])
 const loading = ref(false)
 const generating = ref(false)
-const batchUpdating = ref(false)
 const filters = reactive({
   type: '',
   status: '',
@@ -931,7 +787,6 @@ let abortController: AbortController | null = null
 
 const showDeleteDialog = ref(false)
 const showDeleteUnusedDialog = ref(false)
-const showBatchUpdateDialog = ref(false)
 const deletingCode = ref<RedeemCode | null>(null)
 const copiedCode = ref<string | null>(null)
 
@@ -946,18 +801,6 @@ const {
 } = useTableSelection<RedeemCode>({
   rows: codes,
   getId: (code) => code.id
-})
-
-const batchUpdateForm = reactive({
-  update_status: false,
-  status: 'disabled' as 'unused' | 'disabled',
-  update_expires_at: false,
-  expires_mode: 'clear' as 'clear' | 'custom',
-  expires_at_local: '',
-  update_notes: false,
-  notes: '',
-  update_group_id: false,
-  group_id: null as number | null
 })
 
 type RedeemCodeExpiryOption = 'never' | '1' | '3' | '7' | 'custom'
@@ -1221,69 +1064,6 @@ const getRedeemCodeExpiresInDays = () => {
   return Number(generateForm.expiry_option)
 }
 
-const toDatetimeLocalInputValue = (date: Date) => {
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`
-}
-
-const resetBatchUpdateForm = () => {
-  batchUpdateForm.update_status = false
-  batchUpdateForm.status = 'disabled'
-  batchUpdateForm.update_expires_at = false
-  batchUpdateForm.expires_mode = 'clear'
-  batchUpdateForm.expires_at_local = toDatetimeLocalInputValue(
-    new Date(Date.now() + 24 * 60 * 60 * 1000)
-  )
-  batchUpdateForm.update_notes = false
-  batchUpdateForm.notes = ''
-  batchUpdateForm.update_group_id = false
-  batchUpdateForm.group_id = null
-}
-
-const openBatchUpdateDialog = () => {
-  if (selectedCount.value === 0) {
-    appStore.showInfo(t('admin.redeem.selectCodesFirst'))
-    return
-  }
-  resetBatchUpdateForm()
-  showBatchUpdateDialog.value = true
-}
-
-const closeBatchUpdateDialog = () => {
-  showBatchUpdateDialog.value = false
-}
-
-const buildBatchUpdateFields = (): BatchUpdateRedeemCodeFields | null => {
-  const fields: BatchUpdateRedeemCodeFields = {}
-
-  if (batchUpdateForm.update_status) {
-    fields.status = batchUpdateForm.status
-  }
-  if (batchUpdateForm.update_expires_at) {
-    if (batchUpdateForm.expires_mode === 'clear') {
-      fields.expires_at = null
-    } else {
-      const expiresAt = new Date(batchUpdateForm.expires_at_local)
-      if (!batchUpdateForm.expires_at_local || Number.isNaN(expiresAt.getTime())) {
-        appStore.showError(t('admin.redeem.expiryDaysRequired'))
-        return null
-      }
-      fields.expires_at = expiresAt.toISOString()
-    }
-  }
-  if (batchUpdateForm.update_notes) {
-    fields.notes = batchUpdateForm.notes
-  }
-  if (batchUpdateForm.update_group_id) {
-    fields.group_id =
-      batchUpdateForm.group_id == null ? null : Number(batchUpdateForm.group_id)
-  }
-
-  return Object.keys(fields).length > 0 ? fields : null
-}
-
 const handleGenerateCodes = async () => {
   // 订阅类型必须选择分组
   if (generateForm.type === 'subscription' && !generateForm.group_id) {
@@ -1373,43 +1153,6 @@ const confirmDeleteUnused = async () => {
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToDeleteUnused'))
     console.error('Error deleting unused codes:', error)
-  }
-}
-
-const handleBatchUpdate = async () => {
-  const ids = Array.from(selectedCodeIds.value)
-  if (ids.length === 0) {
-    appStore.showInfo(t('admin.redeem.selectCodesFirst'))
-    return
-  }
-
-  const hasSelectedFields =
-    batchUpdateForm.update_status ||
-    batchUpdateForm.update_expires_at ||
-    batchUpdateForm.update_notes ||
-    batchUpdateForm.update_group_id
-  if (!hasSelectedFields) {
-    appStore.showError(t('admin.redeem.noBatchFieldsSelected'))
-    return
-  }
-
-  const fields = buildBatchUpdateFields()
-  if (!fields) {
-    return
-  }
-
-  batchUpdating.value = true
-  try {
-    const result = await adminAPI.redeem.batchUpdate(ids, fields)
-    appStore.showSuccess(t('admin.redeem.batchUpdateSuccess', { count: result.updated }))
-    showBatchUpdateDialog.value = false
-    clearSelectedCodes()
-    loadCodes()
-  } catch (error: any) {
-    appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToBatchUpdate'))
-    console.error('Error batch updating codes:', error)
-  } finally {
-    batchUpdating.value = false
   }
 }
 
