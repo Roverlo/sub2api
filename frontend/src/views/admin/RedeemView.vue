@@ -62,10 +62,6 @@
             class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div class="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                <Icon name="filter" size="sm" class="text-gray-400 dark:text-dark-400" />
-                <span class="font-medium">{{ t('admin.redeem.amountBuckets') }}</span>
-              </div>
               <div
                 class="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2"
               >
