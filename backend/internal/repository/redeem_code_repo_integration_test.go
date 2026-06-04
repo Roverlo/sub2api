@@ -215,6 +215,54 @@ func (s *RedeemCodeRepoSuite) TestListWithFilters_ValueRange() {
 	s.Require().Equal("VALUE-20", codes[0].Code)
 }
 
+func (s *RedeemCodeRepoSuite) TestListWithFilters_ValueIn() {
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-IN-10", Type: service.RedeemTypeBalance, Value: 10, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-IN-20", Type: service.RedeemTypeBalance, Value: 20, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-IN-50", Type: service.RedeemTypeBalance, Value: 50, Status: service.StatusUnused}))
+
+	codes, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10, SortBy: "value", SortOrder: "asc"}, service.RedeemCodeListFilters{
+		Type:    service.RedeemTypeBalance,
+		ValueIn: []float64{10, 50},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(codes, 2)
+	s.Require().Equal(int64(2), page.Total)
+	s.Require().Equal("VALUE-IN-10", codes[0].Code)
+	s.Require().Equal("VALUE-IN-50", codes[1].Code)
+}
+
+func (s *RedeemCodeRepoSuite) TestListWithFilters_ValueBuckets() {
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "BUCKET-BAL-20", Type: service.RedeemTypeBalance, Value: 20, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "BUCKET-CON-20", Type: service.RedeemTypeConcurrency, Value: 20, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "BUCKET-BAL-50", Type: service.RedeemTypeBalance, Value: 50, Status: service.StatusUnused}))
+
+	codes, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10, SortBy: "code", SortOrder: "asc"}, service.RedeemCodeListFilters{
+		ValueBuckets: []service.RedeemCodeValueBucketFilter{
+			{Type: service.RedeemTypeBalance, Value: 20},
+			{Type: service.RedeemTypeBalance, Value: 50},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(codes, 2)
+	s.Require().Equal(int64(2), page.Total)
+	s.Require().Equal("BUCKET-BAL-20", codes[0].Code)
+	s.Require().Equal("BUCKET-BAL-50", codes[1].Code)
+}
+
+func (s *RedeemCodeRepoSuite) TestListValueBuckets() {
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-BUCKET-BAL-20-A", Type: service.RedeemTypeBalance, Value: 20, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-BUCKET-BAL-20-B", Type: service.RedeemTypeBalance, Value: 20, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-BUCKET-CON-20", Type: service.RedeemTypeConcurrency, Value: 20, Status: service.StatusUnused}))
+	s.Require().NoError(s.repo.Create(s.ctx, &service.RedeemCode{Code: "VALUE-BUCKET-SUB", Type: service.RedeemTypeSubscription, Value: 20, Status: service.StatusUnused}))
+
+	buckets, err := s.repo.ListValueBuckets(s.ctx, service.RedeemCodeListFilters{Status: service.StatusUnused})
+	s.Require().NoError(err)
+	s.Require().Equal([]service.RedeemCodeValueBucket{
+		{Type: service.RedeemTypeBalance, Value: 20, Count: 2},
+		{Type: service.RedeemTypeConcurrency, Value: 20, Count: 1},
+	}, buckets)
+}
+
 func (s *RedeemCodeRepoSuite) TestListWithFilters_GroupPreload() {
 	group := s.createGroup(uniqueTestValue(s.T(), "g-preload"))
 	_, err := s.client.RedeemCode.Create().

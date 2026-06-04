@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +24,7 @@ func TestRedeemExportPassesSearchAndSort(t *testing.T) {
 	router, adminSvc := setupRedeemExportRouter()
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/redeem-codes/export?type=balance&status=unused&search=ABC&value_min=20&value_max=20&sort_by=value&sort_order=asc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/redeem-codes/export?type=balance&status=unused&search=ABC&value_min=20&value_max=20&value_in=20,50&value_buckets=balance:20,concurrency:5&sort_by=value&sort_order=asc", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
@@ -35,6 +36,11 @@ func TestRedeemExportPassesSearchAndSort(t *testing.T) {
 	require.NotNil(t, adminSvc.lastListRedeemCodes.filters.ValueMax)
 	require.Equal(t, 20.0, *adminSvc.lastListRedeemCodes.filters.ValueMin)
 	require.Equal(t, 20.0, *adminSvc.lastListRedeemCodes.filters.ValueMax)
+	require.Equal(t, []float64{20, 50}, adminSvc.lastListRedeemCodes.filters.ValueIn)
+	require.Equal(t, []service.RedeemCodeValueBucketFilter{
+		{Type: service.RedeemTypeBalance, Value: 20},
+		{Type: service.RedeemTypeConcurrency, Value: 5},
+	}, adminSvc.lastListRedeemCodes.filters.ValueBuckets)
 	require.Equal(t, "value", adminSvc.lastListRedeemCodes.sortBy)
 	require.Equal(t, "asc", adminSvc.lastListRedeemCodes.sortOrder)
 }

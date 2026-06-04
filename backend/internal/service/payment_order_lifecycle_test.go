@@ -150,6 +150,10 @@ func (r *paymentOrderLifecycleRedeemRepo) ListWithFilters(context.Context, pagin
 	panic("unexpected call")
 }
 
+func (r *paymentOrderLifecycleRedeemRepo) ListValueBuckets(context.Context, RedeemCodeListFilters) ([]RedeemCodeValueBucket, error) {
+	panic("unexpected call")
+}
+
 func (r *paymentOrderLifecycleRedeemRepo) ListByUser(context.Context, int64, int) ([]RedeemCode, error) {
 	panic("unexpected call")
 }

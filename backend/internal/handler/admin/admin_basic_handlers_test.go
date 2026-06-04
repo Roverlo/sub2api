@@ -54,6 +54,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router.GET("/api/v1/admin/proxies/:id/accounts", proxyHandler.GetProxyAccounts)
 
 	router.GET("/api/v1/admin/redeem-codes", redeemHandler.List)
+	router.GET("/api/v1/admin/redeem-codes/value-buckets", redeemHandler.ValueBuckets)
 	router.GET("/api/v1/admin/redeem-codes/:id", redeemHandler.GetByID)
 	router.POST("/api/v1/admin/redeem-codes", redeemHandler.Generate)
 	router.DELETE("/api/v1/admin/redeem-codes/:id", redeemHandler.Delete)

@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -103,8 +105,33 @@ func (r *redeemCodeRepository) List(ctx context.Context, params pagination.Pagin
 }
 
 func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters service.RedeemCodeListFilters) ([]service.RedeemCode, *pagination.PaginationResult, error) {
-	q := r.client.RedeemCode.Query()
+	q := r.applyListFilters(r.client.RedeemCode.Query(), filters)
 
+	total, err := q.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	codesQuery := q.
+		WithUser().
+		WithGroup().
+		Offset(params.Offset()).
+		Limit(params.Limit())
+	for _, order := range redeemCodeListOrder(params) {
+		codesQuery = codesQuery.Order(order)
+	}
+
+	codes, err := codesQuery.All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	outCodes := redeemCodeEntitiesToService(codes)
+
+	return outCodes, paginationResultFromTotal(int64(total), params), nil
+}
+
+func (r *redeemCodeRepository) applyListFilters(q *dbent.RedeemCodeQuery, filters service.RedeemCodeListFilters) *dbent.RedeemCodeQuery {
 	if filters.Type != "" {
 		q = q.Where(redeemcode.TypeEQ(filters.Type))
 	}
@@ -138,6 +165,19 @@ func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagin
 	if filters.ValueMax != nil {
 		q = q.Where(redeemcode.ValueLTE(*filters.ValueMax))
 	}
+	if len(filters.ValueIn) > 0 {
+		q = q.Where(redeemcode.ValueIn(filters.ValueIn...))
+	}
+	if len(filters.ValueBuckets) > 0 {
+		predicates := make([]predicate.RedeemCode, 0, len(filters.ValueBuckets))
+		for _, bucket := range filters.ValueBuckets {
+			predicates = append(predicates, redeemcode.And(
+				redeemcode.TypeEQ(bucket.Type),
+				redeemcode.ValueEQ(bucket.Value),
+			))
+		}
+		q = q.Where(redeemcode.Or(predicates...))
+	}
 	if filters.Search != "" {
 		q = q.Where(
 			redeemcode.Or(
@@ -146,29 +186,48 @@ func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagin
 			),
 		)
 	}
+	return q
+}
 
-	total, err := q.Count(ctx)
+func (r *redeemCodeRepository) ListValueBuckets(ctx context.Context, filters service.RedeemCodeListFilters) ([]service.RedeemCodeValueBucket, error) {
+	type bucketRow struct {
+		Type  string  `json:"type"`
+		Value float64 `json:"value"`
+		Count int64   `json:"count"`
+	}
+
+	rows := make([]bucketRow, 0)
+	q := r.applyListFilters(
+		r.client.RedeemCode.Query().
+			Where(redeemcode.TypeIn(service.RedeemTypeBalance, service.RedeemTypeConcurrency)),
+		filters,
+	)
+	err := q.
+		GroupBy(redeemcode.FieldType, redeemcode.FieldValue).
+		Aggregate(dbent.As(dbent.Count(), "count")).
+		Scan(ctx, &rows)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	codesQuery := q.
-		WithUser().
-		WithGroup().
-		Offset(params.Offset()).
-		Limit(params.Limit())
-	for _, order := range redeemCodeListOrder(params) {
-		codesQuery = codesQuery.Order(order)
+	buckets := make([]service.RedeemCodeValueBucket, 0, len(rows))
+	for _, row := range rows {
+		buckets = append(buckets, service.RedeemCodeValueBucket{
+			Type:  row.Type,
+			Value: row.Value,
+			Count: row.Count,
+		})
 	}
-
-	codes, err := codesQuery.All(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	outCodes := redeemCodeEntitiesToService(codes)
-
-	return outCodes, paginationResultFromTotal(int64(total), params), nil
+	sort.SliceStable(buckets, func(i, j int) bool {
+		if buckets[i].Count != buckets[j].Count {
+			return buckets[i].Count > buckets[j].Count
+		}
+		if buckets[i].Value != buckets[j].Value {
+			return buckets[i].Value < buckets[j].Value
+		}
+		return buckets[i].Type < buckets[j].Type
+	})
+	return buckets, nil
 }
 
 func redeemCodeListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {

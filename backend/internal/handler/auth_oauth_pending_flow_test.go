@@ -2525,6 +2525,10 @@ func (r *oauthPendingFlowRedeemCodeRepo) ListWithFilters(context.Context, pagina
 	panic("unexpected ListWithFilters call")
 }
 
+func (r *oauthPendingFlowRedeemCodeRepo) ListValueBuckets(context.Context, service.RedeemCodeListFilters) ([]service.RedeemCodeValueBucket, error) {
+	panic("unexpected ListValueBuckets call")
+}
+
 func (r *oauthPendingFlowRedeemCodeRepo) ListByUser(context.Context, int64, int) ([]service.RedeemCode, error) {
 	panic("unexpected ListByUser call")
 }

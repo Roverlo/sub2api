@@ -3,20 +3,29 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import RedeemView from '../RedeemView.vue'
 
-const { listRedeemCodes, batchUpdateRedeemCodes, getAllGroups, showSuccess, showError, showInfo } =
-  vi.hoisted(() => ({
-    listRedeemCodes: vi.fn(),
-    batchUpdateRedeemCodes: vi.fn(),
-    getAllGroups: vi.fn(),
-    showSuccess: vi.fn(),
-    showError: vi.fn(),
-    showInfo: vi.fn()
-  }))
+const {
+  listRedeemCodes,
+  listRedeemValueBuckets,
+  batchUpdateRedeemCodes,
+  getAllGroups,
+  showSuccess,
+  showError,
+  showInfo
+} = vi.hoisted(() => ({
+  listRedeemCodes: vi.fn(),
+  listRedeemValueBuckets: vi.fn(),
+  batchUpdateRedeemCodes: vi.fn(),
+  getAllGroups: vi.fn(),
+  showSuccess: vi.fn(),
+  showError: vi.fn(),
+  showInfo: vi.fn()
+}))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     redeem: {
       list: listRedeemCodes,
+      listValueBuckets: listRedeemValueBuckets,
       generate: vi.fn(),
       delete: vi.fn(),
       batchDelete: vi.fn(),
@@ -80,7 +89,10 @@ const DataTableStub = {
 const SelectStub = {
   props: ['modelValue', 'options'],
   emits: ['update:modelValue', 'change'],
-  setup(props: { options: Array<{ value: unknown; label: string }> }, { emit }: { emit: (event: string, ...args: unknown[]) => void }) {
+  setup(
+    props: { options: Array<{ value: unknown; label: string }> },
+    { emit }: { emit: (event: string, ...args: unknown[]) => void }
+  ) {
     const onChange = (event: Event) => {
       const raw = (event.target as HTMLSelectElement).value
       const option = props.options.find((item) => String(item.value ?? '') === raw)
@@ -105,6 +117,7 @@ describe('admin RedeemView selection actions', () => {
     document.body.innerHTML = ''
 
     listRedeemCodes.mockReset()
+    listRedeemValueBuckets.mockReset()
     batchUpdateRedeemCodes.mockReset()
     getAllGroups.mockReset()
     showSuccess.mockReset()
@@ -141,6 +154,10 @@ describe('admin RedeemView selection actions', () => {
       page_size: 20,
       pages: 1
     })
+    listRedeemValueBuckets.mockResolvedValue([
+      { type: 'balance', value: 10, count: 1 },
+      { type: 'balance', value: 20, count: 1 }
+    ])
     batchUpdateRedeemCodes.mockResolvedValue({ updated: 1, message: 'ok' })
     getAllGroups.mockResolvedValue([])
   })
@@ -175,5 +192,71 @@ describe('admin RedeemView selection actions', () => {
     expect(document.body.textContent).not.toContain('admin.redeem.batchUpdate')
     expect(document.body.textContent).not.toContain('admin.redeem.batchUpdateTitle')
     expect(batchUpdateRedeemCodes).not.toHaveBeenCalled()
+  })
+
+  it('filters redeem code list by multiple selected value buckets', async () => {
+    const wrapper = mount(RedeemView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          Select: SelectStub,
+          GroupBadge: true,
+          GroupOptionItem: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const bucketButtons = wrapper.findAll('[data-test="value-bucket-filter"]')
+    expect(bucketButtons).toHaveLength(2)
+
+    await bucketButtons[0].trigger('click')
+    await flushPromises()
+    expect(listRedeemCodes).toHaveBeenLastCalledWith(
+      1,
+      expect.any(Number),
+      expect.objectContaining({ value_buckets: 'balance:10' }),
+      expect.any(Object)
+    )
+
+    await bucketButtons[1].trigger('click')
+    await flushPromises()
+    expect(listRedeemCodes).toHaveBeenLastCalledWith(
+      1,
+      expect.any(Number),
+      expect.objectContaining({ value_buckets: 'balance:10,balance:20' }),
+      expect.any(Object)
+    )
+
+    await bucketButtons[0].trigger('click')
+    await flushPromises()
+    expect(listRedeemCodes).toHaveBeenLastCalledWith(
+      1,
+      expect.any(Number),
+      expect.objectContaining({ value_buckets: 'balance:20' }),
+      expect.any(Object)
+    )
+
+    const resetButtons = wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('common.reset'))
+    await resetButtons.at(-1)!.trigger('click')
+    await flushPromises()
+    expect(listRedeemCodes).toHaveBeenLastCalledWith(
+      1,
+      expect.any(Number),
+      expect.not.objectContaining({ value_buckets: expect.any(String) }),
+      expect.any(Object)
+    )
   })
 })

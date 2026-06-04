@@ -61,23 +61,27 @@
           <section
             class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
           >
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
               <div class="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                 <Icon name="filter" size="sm" class="text-gray-400 dark:text-dark-400" />
                 <span class="font-medium">{{ t('admin.redeem.amountBuckets') }}</span>
               </div>
-              <div class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 lg:pb-0">
+              <div
+                class="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2"
+              >
                 <button
                   v-for="bucket in visibleValueBuckets"
                   :key="bucket.key"
                   type="button"
+                  data-test="value-bucket-filter"
+                  :aria-pressed="isValueBucketSelected(bucket.key)"
                   :class="[
-                    'flex min-w-32 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
-                    isExactValueFilter(bucket.value, bucket.type)
-                      ? 'border-primary-500 bg-primary-50 text-primary-800 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-200'
-                      : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-primary-200 hover:bg-white hover:text-primary-700 dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-300 dark:hover:border-primary-700 dark:hover:bg-dark-800'
+                    'flex min-w-0 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+                    isValueBucketSelected(bucket.key)
+                      ? 'border-green-500 bg-green-50 text-green-800 shadow-sm dark:border-green-400 dark:bg-green-900/20 dark:text-green-200'
+                      : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-green-200 hover:bg-white hover:text-green-700 dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-300 dark:hover:border-green-700 dark:hover:bg-dark-800'
                   ]"
-                  @click="applyExactValueFilter(bucket.value, bucket.type)"
+                  @click="toggleValueBucketFilter(bucket.key)"
                 >
                   <span class="min-w-0">
                     <span class="block text-sm font-semibold leading-5">
@@ -88,7 +92,12 @@
                     </span>
                   </span>
                   <span
-                    class="rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300"
+                    :class="[
+                      'rounded-md px-2 py-1 text-xs font-semibold shadow-sm',
+                      isValueBucketSelected(bucket.key)
+                        ? 'bg-white text-green-700 dark:bg-dark-800 dark:text-green-200'
+                        : 'bg-white text-gray-600 dark:bg-dark-800 dark:text-gray-300'
+                    ]"
                   >
                     {{ bucket.count }}
                   </span>
@@ -97,9 +106,18 @@
                   v-if="visibleValueBuckets.length === 0"
                   class="inline-flex min-h-10 items-center text-sm text-gray-400"
                 >
-                  {{ loading ? t('common.loading') : t('empty.noData') }}
+                  {{ loadingValueBuckets ? t('common.loading') : t('empty.noData') }}
                 </span>
               </div>
+              <button
+                v-if="selectedValueBucketKeys.size > 0"
+                type="button"
+                class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 transition-colors hover:border-green-300 hover:bg-white dark:border-green-800 dark:bg-green-900/20 dark:text-green-200 dark:hover:border-green-700 dark:hover:bg-dark-800"
+                @click="resetValueBucketFilters"
+              >
+                <Icon name="x" size="sm" />
+                {{ t('common.reset') }}
+              </button>
             </div>
           </section>
 
@@ -754,8 +772,13 @@ const concurrencyValuePresets = [1, 2, 5, 10, 20]
 const countPresets = [1, 5, 10, 20, 50, 100]
 
 const codes = ref<RedeemCode[]>([])
+type ValueBucket = { key: string; value: number; type: RedeemCodeType; count: number }
+
+const valueBuckets = ref<ValueBucket[]>([])
 const loading = ref(false)
 const generating = ref(false)
+const loadingValueBuckets = ref(false)
+const selectedValueBucketKeys = ref(new Set<string>())
 const filters = reactive({
   type: '',
   status: '',
@@ -829,6 +852,8 @@ const formatRedeemValue = (value: number, type: RedeemCodeType) => {
   return String(value)
 }
 
+const getValueBucketKey = (value: number, type: RedeemCodeType) => `${type}:${value}`
+
 const currentValuePresets = computed(() => {
   if (generateForm.type === 'balance') return balanceValuePresets
   if (generateForm.type === 'concurrency') return concurrencyValuePresets
@@ -840,31 +865,17 @@ const hasActiveFilters = computed(
     Boolean(filters.type) ||
     Boolean(filters.status) ||
     Boolean(filters.value_min.trim()) ||
-    Boolean(filters.value_max.trim())
+    Boolean(filters.value_max.trim()) ||
+    selectedValueBucketKeys.value.size > 0
 )
 
 const visibleValueBuckets = computed(() => {
-  const bucketMap = new Map<string, { key: string; value: number; type: RedeemCodeType; count: number }>()
-  for (const code of codes.value) {
-    if (code.type !== 'balance' && code.type !== 'concurrency') continue
-    const key = `${code.type}:${code.value}`
-    const existing = bucketMap.get(key)
-    if (existing) {
-      existing.count += 1
-      continue
-    }
-    bucketMap.set(key, {
-      key,
-      value: code.value,
-      type: code.type,
-      count: 1
-    })
-  }
-
-  return Array.from(bucketMap.values())
-    .sort((a, b) => b.count - a.count || a.value - b.value)
-    .slice(0, 8)
+  return [...valueBuckets.value].sort((a, b) => b.count - a.count || a.value - b.value)
 })
+
+const selectedValueBucketQuery = computed(() =>
+  Array.from(selectedValueBucketKeys.value).sort().join(',')
+)
 
 const selectedValueSummary = computed(() => {
   const selectedCodes = codes.value.filter((code) => selectedCodeIds.value.has(code.id))
@@ -889,31 +900,40 @@ const selectedValueSummary = computed(() => {
     .join(' / ')
 })
 
-const isExactValueFilter = (value: number, type?: RedeemCodeType) => {
-  const minValue = parseOptionalNumber(filters.value_min)
-  const maxValue = parseOptionalNumber(filters.value_max)
-  return minValue === value && maxValue === value && (!filters.type || filters.type === type)
-}
+const isValueBucketSelected = (key: string) => selectedValueBucketKeys.value.has(key)
 
 const handleFilterChange = () => {
   pagination.page = 1
   loadCodes()
+  loadValueBuckets()
 }
 
 const handleValueFilterInput = () => {
   filters.type = ''
+  selectedValueBucketKeys.value = new Set()
   clearTimeout(valueFilterTimeout)
   valueFilterTimeout = setTimeout(() => {
     pagination.page = 1
     loadCodes()
+    loadValueBuckets()
   }, 300)
 }
 
-const applyExactValueFilter = (value: number, type?: RedeemCodeType) => {
-  const stringValue = String(value)
-  if (type) filters.type = type
-  filters.value_min = stringValue
-  filters.value_max = stringValue
+const toggleValueBucketFilter = (key: string) => {
+  const next = new Set(selectedValueBucketKeys.value)
+  if (next.has(key)) {
+    next.delete(key)
+  } else {
+    next.add(key)
+  }
+  selectedValueBucketKeys.value = next
+  pagination.page = 1
+  loadCodes()
+}
+
+const resetValueBucketFilters = () => {
+  if (selectedValueBucketKeys.value.size === 0) return
+  selectedValueBucketKeys.value = new Set()
   pagination.page = 1
   loadCodes()
 }
@@ -923,8 +943,10 @@ const resetFilters = () => {
   filters.status = ''
   filters.value_min = ''
   filters.value_max = ''
+  selectedValueBucketKeys.value = new Set()
   pagination.page = 1
   loadCodes()
+  loadValueBuckets()
 }
 
 // 监听类型变化，邀请码类型时自动设置 value 为 0
@@ -956,8 +978,26 @@ const buildRedeemQueryFilters = () => {
     status: (filters.status || undefined) as 'used' | 'expired' | 'unused' | 'disabled' | undefined,
     value_min: valueMin,
     value_max: valueMax,
+    value_buckets: selectedValueBucketQuery.value || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
+  }
+}
+
+const buildValueBucketQueryFilters = () => {
+  const valueMin = parseOptionalNumber(filters.value_min)
+  const valueMax = parseOptionalNumber(filters.value_max)
+  if (valueMin !== undefined && valueMax !== undefined && valueMin > valueMax) {
+    return null
+  }
+
+  return {
+    type: (filters.type || undefined) as RedeemCodeType | undefined,
+    status: (filters.status || undefined) as 'used' | 'expired' | 'unused' | 'disabled' | undefined,
+    value_min: valueMin,
+    value_max: valueMax,
+    sort_by: 'value',
+    sort_order: 'asc' as const
   }
 }
 
@@ -1001,6 +1041,31 @@ const loadCodes = async () => {
       loading.value = false
       abortController = null
     }
+  }
+}
+
+const loadValueBuckets = async () => {
+  const queryFilters = buildValueBucketQueryFilters()
+  if (!queryFilters) return
+
+  loadingValueBuckets.value = true
+  try {
+    const response = await adminAPI.redeem.listValueBuckets(queryFilters)
+    valueBuckets.value = response.map((bucket) => ({
+      ...bucket,
+      key: getValueBucketKey(bucket.value, bucket.type)
+    }))
+    const availableKeys = new Set(valueBuckets.value.map((bucket) => bucket.key))
+    const nextSelected = new Set(
+      Array.from(selectedValueBucketKeys.value).filter((key) => availableKeys.has(key))
+    )
+    if (nextSelected.size !== selectedValueBucketKeys.value.size) {
+      selectedValueBucketKeys.value = nextSelected
+    }
+  } catch (error) {
+    console.error('Error loading redeem value buckets:', error)
+  } finally {
+    loadingValueBuckets.value = false
   }
 }
 
@@ -1086,6 +1151,7 @@ const handleGenerateCodes = async () => {
     generateForm.expiry_option = 'never'
     generateForm.custom_expiry_days = 7
     loadCodes()
+    loadValueBuckets()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToGenerate'))
     console.error('Error generating codes:', error)
@@ -1118,6 +1184,7 @@ const confirmDelete = async () => {
     showDeleteDialog.value = false
     deletingCode.value = null
     loadCodes()
+    loadValueBuckets()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToDelete'))
     console.error('Error deleting code:', error)
@@ -1140,6 +1207,7 @@ const confirmDeleteUnused = async () => {
     appStore.showSuccess(t('admin.redeem.codesDeleted', { count: result.deleted }))
     showDeleteUnusedDialog.value = false
     loadCodes()
+    loadValueBuckets()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToDeleteUnused'))
     console.error('Error deleting unused codes:', error)
@@ -1158,6 +1226,7 @@ const loadSubscriptionGroups = async () => {
 
 onMounted(() => {
   loadCodes()
+  loadValueBuckets()
   loadSubscriptionGroups()
 })
 

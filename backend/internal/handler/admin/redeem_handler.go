@@ -104,6 +104,21 @@ func (h *RedeemHandler) List(c *gin.Context) {
 	response.Paginated(c, out, total, page, pageSize)
 }
 
+// ValueBuckets handles listing created balance/concurrency value buckets.
+// GET /api/v1/admin/redeem-codes/value-buckets
+func (h *RedeemHandler) ValueBuckets(c *gin.Context) {
+	filters, ok := parseRedeemCodeListFilters(c)
+	if !ok {
+		return
+	}
+	buckets, err := h.adminService.ListRedeemCodeValueBuckets(c.Request.Context(), filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, buckets)
+}
+
 func parseRedeemCodeListFilters(c *gin.Context) (service.RedeemCodeListFilters, bool) {
 	filters := service.RedeemCodeListFilters{
 		Type:   c.Query("type"),
@@ -130,12 +145,94 @@ func parseRedeemCodeListFilters(c *gin.Context) (service.RedeemCodeListFilters, 
 		}
 		filters.ValueMax = &value
 	}
+	rawValues := strings.TrimSpace(c.Query("value_in"))
+	if rawValues == "" {
+		rawValues = strings.TrimSpace(c.Query("values"))
+	} else if alias := strings.TrimSpace(c.Query("values")); alias != "" {
+		rawValues += "," + alias
+	}
+	if rawValues != "" {
+		values, err := parseRedeemCodeValueList(rawValues)
+		if err != nil {
+			response.BadRequest(c, "Invalid value_in")
+			return service.RedeemCodeListFilters{}, false
+		}
+		filters.ValueIn = values
+	}
+	if raw := strings.TrimSpace(c.Query("value_buckets")); raw != "" {
+		buckets, err := parseRedeemCodeValueBucketList(raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid value_buckets")
+			return service.RedeemCodeListFilters{}, false
+		}
+		filters.ValueBuckets = buckets
+	}
 	if filters.ValueMin != nil && filters.ValueMax != nil && *filters.ValueMin > *filters.ValueMax {
 		response.BadRequest(c, "value_min cannot be greater than value_max")
 		return service.RedeemCodeListFilters{}, false
 	}
 
 	return filters, true
+}
+
+func parseRedeemCodeValueList(raw string) ([]float64, error) {
+	parts := strings.Split(raw, ",")
+	values := make([]float64, 0, len(parts))
+	seen := make(map[float64]struct{}, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		value, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func parseRedeemCodeValueBucketList(raw string) ([]service.RedeemCodeValueBucketFilter, error) {
+	parts := strings.Split(raw, ",")
+	buckets := make([]service.RedeemCodeValueBucketFilter, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+
+		bucketParts := strings.SplitN(trimmed, ":", 2)
+		if len(bucketParts) != 2 {
+			return nil, fmt.Errorf("invalid bucket %q", trimmed)
+		}
+		codeType := strings.TrimSpace(bucketParts[0])
+		switch codeType {
+		case service.RedeemTypeBalance, service.RedeemTypeConcurrency:
+		default:
+			return nil, fmt.Errorf("invalid bucket type %q", codeType)
+		}
+
+		value, err := strconv.ParseFloat(strings.TrimSpace(bucketParts[1]), 64)
+		if err != nil {
+			return nil, err
+		}
+		key := fmt.Sprintf("%s:%g", codeType, value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		buckets = append(buckets, service.RedeemCodeValueBucketFilter{
+			Type:  codeType,
+			Value: value,
+		})
+	}
+	return buckets, nil
 }
 
 // GetByID handles getting a redeem code by ID

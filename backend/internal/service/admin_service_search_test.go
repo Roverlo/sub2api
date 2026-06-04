@@ -156,6 +156,10 @@ func (s *redeemRepoStubForAdminList) ListWithFilters(_ context.Context, params p
 	return s.listWithFiltersCodes, result, nil
 }
 
+func (s *redeemRepoStubForAdminList) ListValueBuckets(_ context.Context, filters RedeemCodeListFilters) ([]RedeemCodeValueBucket, error) {
+	panic("unexpected ListValueBuckets call")
+}
+
 func (s *redeemRepoStubForAdminList) ListByUserPaginated(_ context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]RedeemCode, *pagination.PaginationResult, error) {
 	panic("unexpected ListByUserPaginated call")
 }

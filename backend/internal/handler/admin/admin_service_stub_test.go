@@ -17,6 +17,7 @@ type stubAdminService struct {
 	proxies              []service.Proxy
 	proxyCounts          []service.ProxyWithAccountCount
 	redeems              []service.RedeemCode
+	redeemValueBuckets   []service.RedeemCodeValueBucket
 	boundAuthIdentity    *service.AdminBindAuthIdentityInput
 	boundAuthIdentityFor int64
 	createdAccounts      []*service.CreateAccountInput
@@ -536,6 +537,10 @@ func (s *stubAdminService) ListRedeemCodes(ctx context.Context, page, pageSize i
 	s.lastListRedeemCodes.sortOrder = sortOrder
 	s.lastListRedeemCodes.calls++
 	return s.redeems, int64(len(s.redeems)), nil
+}
+
+func (s *stubAdminService) ListRedeemCodeValueBuckets(ctx context.Context, filters service.RedeemCodeListFilters) ([]service.RedeemCodeValueBucket, error) {
+	return s.redeemValueBuckets, nil
 }
 
 func (s *stubAdminService) GetRedeemCode(ctx context.Context, id int64) (*service.RedeemCode, error) {

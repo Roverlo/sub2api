@@ -388,6 +388,10 @@ func (s *redeemRepoStub) ListWithFilters(ctx context.Context, params pagination.
 	panic("unexpected ListWithFilters call")
 }
 
+func (s *redeemRepoStub) ListValueBuckets(ctx context.Context, filters RedeemCodeListFilters) ([]RedeemCodeValueBucket, error) {
+	panic("unexpected ListValueBuckets call")
+}
+
 func (s *redeemRepoStub) ListByUser(ctx context.Context, userID int64, limit int) ([]RedeemCode, error) {
 	panic("unexpected ListByUser call")
 }

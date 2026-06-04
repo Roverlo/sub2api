@@ -94,6 +94,10 @@ func (s *redeemCodeRepoStub) ListWithFilters(context.Context, pagination.Paginat
 	panic("unexpected ListWithFilters call")
 }
 
+func (s *redeemCodeRepoStub) ListValueBuckets(context.Context, RedeemCodeListFilters) ([]RedeemCodeValueBucket, error) {
+	panic("unexpected ListValueBuckets call")
+}
+
 func (s *redeemCodeRepoStub) ListByUser(context.Context, int64, int) ([]RedeemCode, error) {
 	panic("unexpected ListByUser call")
 }

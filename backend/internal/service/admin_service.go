@@ -114,6 +114,7 @@ type AdminService interface {
 
 	// Redeem code management
 	ListRedeemCodes(ctx context.Context, page, pageSize int, filters RedeemCodeListFilters, sortBy, sortOrder string) ([]RedeemCode, int64, error)
+	ListRedeemCodeValueBuckets(ctx context.Context, filters RedeemCodeListFilters) ([]RedeemCodeValueBucket, error)
 	GetRedeemCode(ctx context.Context, id int64) (*RedeemCode, error)
 	GenerateRedeemCodes(ctx context.Context, input *GenerateRedeemCodesInput) ([]RedeemCode, error)
 	DeleteRedeemCode(ctx context.Context, id int64) error
@@ -3067,6 +3068,13 @@ func (s *adminServiceImpl) ListRedeemCodes(ctx context.Context, page, pageSize i
 		return nil, 0, err
 	}
 	return codes, result.Total, nil
+}
+
+func (s *adminServiceImpl) ListRedeemCodeValueBuckets(ctx context.Context, filters RedeemCodeListFilters) ([]RedeemCodeValueBucket, error) {
+	filters.ValueIn = nil
+	filters.ValueBuckets = nil
+	filters.Search = ""
+	return s.redeemCodeRepo.ListValueBuckets(ctx, filters)
 }
 
 func (s *adminServiceImpl) GetRedeemCode(ctx context.Context, id int64) (*RedeemCode, error) {

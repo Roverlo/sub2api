@@ -18,8 +18,16 @@ export interface RedeemCodeListFilters {
   search?: string
   value_min?: number
   value_max?: number
+  value_in?: string
+  value_buckets?: string
   sort_by?: string
   sort_order?: 'asc' | 'desc'
+}
+
+export interface RedeemCodeValueBucket {
+  type: Extract<RedeemCodeType, 'balance' | 'concurrency'>
+  value: number
+  count: number
 }
 
 /**
@@ -45,6 +53,21 @@ export async function list(
     },
     signal: options?.signal
   })
+  return data
+}
+
+/**
+ * List distinct balance/concurrency value buckets for admin filtering.
+ */
+export async function listValueBuckets(
+  filters?: RedeemCodeListFilters
+): Promise<RedeemCodeValueBucket[]> {
+  const { data } = await apiClient.get<RedeemCodeValueBucket[]>(
+    '/admin/redeem-codes/value-buckets',
+    {
+      params: filters
+    }
+  )
   return data
 }
 
@@ -187,6 +210,8 @@ export async function exportCodes(filters?: {
   search?: string
   value_min?: number
   value_max?: number
+  value_in?: string
+  value_buckets?: string
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }): Promise<Blob> {
@@ -199,6 +224,7 @@ export async function exportCodes(filters?: {
 
 export const redeemAPI = {
   list,
+  listValueBuckets,
   getById,
   generate,
   delete: deleteCode,
