@@ -60,10 +60,6 @@
                 >
                   <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
                 </button>
-                <button type="button" class="btn btn-secondary" @click="handleExportCodes">
-                  <Icon name="download" size="sm" />
-                  {{ t('admin.redeem.exportCsv') }}
-                </button>
                 <button
                   data-test="batch-update-open"
                   type="button"
@@ -1335,30 +1331,6 @@ const copyToClipboard = async (text: string) => {
     setTimeout(() => {
       copiedCode.value = null
     }, 2000)
-  }
-}
-
-const handleExportCodes = async () => {
-  const queryFilters = buildRedeemQueryFilters()
-  if (!queryFilters) return
-
-  try {
-    const blob = await adminAPI.redeem.exportCodes(queryFilters)
-
-    // Create download link
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `redeem-codes-${new Date().toISOString().split('T')[0]}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-
-    appStore.showSuccess(t('admin.redeem.codesExported'))
-  } catch (error: any) {
-    appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToExport'))
-    console.error('Error exporting codes:', error)
   }
 }
 
