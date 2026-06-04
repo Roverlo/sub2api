@@ -50,16 +50,6 @@
                   <Icon name="x" size="sm" />
                   {{ t('common.reset') }}
                 </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-icon"
-                  :disabled="loading"
-                  :title="t('common.refresh')"
-                  :aria-label="t('common.refresh')"
-                  @click="loadCodes"
-                >
-                  <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-                </button>
                 <button type="button" class="btn btn-primary" @click="showGenerateDialog = true">
                   <Icon name="plus" size="sm" />
                   {{ t('admin.redeem.generateCodes') }}

@@ -170,6 +170,7 @@ describe('admin RedeemView selection actions', () => {
     await wrapper.findAll('[data-test="select-code"]')[0].setValue(true)
     await flushPromises()
 
+    expect(wrapper.find('[aria-label="common.refresh"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="batch-update-open"]').exists()).toBe(false)
     expect(document.body.textContent).not.toContain('admin.redeem.batchUpdate')
     expect(document.body.textContent).not.toContain('admin.redeem.batchUpdateTitle')
