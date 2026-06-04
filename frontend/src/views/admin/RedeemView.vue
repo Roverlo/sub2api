@@ -3,123 +3,156 @@
     <TablePageLayout>
       <template #filters>
         <div class="space-y-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <!-- Left: Search + Filters -->
-            <div class="min-w-60 flex-1 sm:max-w-72">
-              <input
-                v-model="searchQuery"
-                type="text"
-                :placeholder="t('admin.redeem.searchCodes')"
-                class="input"
-                @input="handleSearch"
-              />
-            </div>
-            <Select
-              v-model="filters.type"
-              :options="filterTypeOptions"
-              class="w-36"
-              @change="handleFilterChange"
-            />
-            <Select
-              v-model="filters.status"
-              :options="filterStatusOptions"
-              class="w-36"
-              @change="handleFilterChange"
-            />
-            <div class="flex min-w-64 items-center gap-2">
-              <input
-                v-model="filters.value_min"
-                type="number"
-                min="0"
-                step="0.01"
-                :placeholder="t('admin.redeem.valueMin')"
-                class="input"
-                @input="handleValueFilterInput"
-              />
-              <span class="text-sm text-gray-400">-</span>
-              <input
-                v-model="filters.value_max"
-                type="number"
-                min="0"
-                step="0.01"
-                :placeholder="t('admin.redeem.valueMax')"
-                class="input"
-                @input="handleValueFilterInput"
-              />
-            </div>
-
-            <!-- Right: Action buttons -->
-            <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
-              <button
-                v-if="hasActiveFilters"
-                type="button"
-                class="btn btn-secondary"
-                @click="resetFilters"
+          <section
+            class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+          >
+            <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div
+                class="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.3fr)_160px_160px_minmax(240px,.9fr)]"
               >
-                <Icon name="x" size="sm" class="mr-2" />
-                {{ t('common.reset') }}
-              </button>
-              <button
-                @click="loadCodes"
-                :disabled="loading"
-                class="btn btn-secondary"
-                :title="t('common.refresh')"
-              >
-                <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-              </button>
-              <button @click="handleExportCodes" class="btn btn-secondary">
-                <Icon name="download" size="sm" class="mr-2" />
-                {{ t('admin.redeem.exportCsv') }}
-              </button>
-              <button
-                data-test="batch-update-open"
-                @click="openBatchUpdateDialog"
-                :disabled="selectedCount === 0 || batchUpdating"
-                class="btn btn-secondary"
-              >
-                <Icon name="edit" size="md" class="mr-2" />
-                {{ t('admin.redeem.batchUpdate') }}
-              </button>
-              <button @click="showGenerateDialog = true" class="btn btn-primary">
-                <Icon name="plus" size="sm" class="mr-2" />
-                {{ t('admin.redeem.generateCodes') }}
-              </button>
+                <div class="relative">
+                  <Icon
+                    name="search"
+                    size="sm"
+                    class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-400"
+                  />
+                  <input
+                    v-model="searchQuery"
+                    type="search"
+                    :aria-label="t('admin.redeem.searchCodes')"
+                    :placeholder="t('admin.redeem.searchCodes')"
+                    class="input pl-10"
+                    @input="handleSearch"
+                  />
+                </div>
+                <Select
+                  v-model="filters.type"
+                  :options="filterTypeOptions"
+                  @change="handleFilterChange"
+                />
+                <Select
+                  v-model="filters.status"
+                  :options="filterStatusOptions"
+                  @change="handleFilterChange"
+                />
+                <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                  <input
+                    v-model="filters.value_min"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    :aria-label="t('admin.redeem.valueMin')"
+                    :placeholder="t('admin.redeem.valueMin')"
+                    class="input"
+                    @input="handleValueFilterInput"
+                  />
+                  <span class="text-sm text-gray-400">-</span>
+                  <input
+                    v-model="filters.value_max"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    :aria-label="t('admin.redeem.valueMax')"
+                    :placeholder="t('admin.redeem.valueMax')"
+                    class="input"
+                    @input="handleValueFilterInput"
+                  />
+                </div>
+              </div>
+
+              <div class="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
+                <button
+                  v-if="hasActiveFilters"
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  @click="resetFilters"
+                >
+                  <Icon name="x" size="sm" />
+                  {{ t('common.reset') }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-icon"
+                  :disabled="loading"
+                  :title="t('common.refresh')"
+                  :aria-label="t('common.refresh')"
+                  @click="loadCodes"
+                >
+                  <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+                </button>
+                <button type="button" class="btn btn-secondary" @click="handleExportCodes">
+                  <Icon name="download" size="sm" />
+                  {{ t('admin.redeem.exportCsv') }}
+                </button>
+                <button
+                  data-test="batch-update-open"
+                  type="button"
+                  class="btn btn-secondary"
+                  :disabled="selectedCount === 0 || batchUpdating"
+                  @click="openBatchUpdateDialog"
+                >
+                  <Icon name="edit" size="md" />
+                  {{ t('admin.redeem.batchUpdate') }}
+                </button>
+                <button type="button" class="btn btn-primary" @click="showGenerateDialog = true">
+                  <Icon name="plus" size="sm" />
+                  {{ t('admin.redeem.generateCodes') }}
+                </button>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.redeem.amountBuckets') }}
-            </span>
-            <button
-              v-for="bucket in visibleValueBuckets"
-              :key="bucket.key"
-              type="button"
-              :class="[
-                'inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                isExactValueFilter(bucket.value)
-                  ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-primary-200 hover:text-primary-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300 dark:hover:border-primary-700'
-              ]"
-              @click="applyExactValueFilter(bucket.value, bucket.type)"
-            >
-              <span>{{ formatRedeemValue(bucket.value, bucket.type) }}</span>
-              <span v-if="!filters.type" class="text-gray-400">
-                {{ t('admin.redeem.types.' + bucket.type) }}
-              </span>
-              <span class="text-gray-400">{{ bucket.count }}</span>
-            </button>
-            <span v-if="visibleValueBuckets.length === 0" class="text-xs text-gray-400">
-              {{ loading ? t('common.loading') : t('empty.noData') }}
-            </span>
-          </div>
+          <section
+            class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+          >
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div class="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <Icon name="filter" size="sm" class="text-gray-400 dark:text-dark-400" />
+                <span class="font-medium">{{ t('admin.redeem.amountBuckets') }}</span>
+              </div>
+              <div class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 lg:pb-0">
+                <button
+                  v-for="bucket in visibleValueBuckets"
+                  :key="bucket.key"
+                  type="button"
+                  :class="[
+                    'flex min-w-32 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+                    isExactValueFilter(bucket.value)
+                      ? 'border-primary-500 bg-primary-50 text-primary-800 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-200'
+                      : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-primary-200 hover:bg-white hover:text-primary-700 dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-300 dark:hover:border-primary-700 dark:hover:bg-dark-800'
+                  ]"
+                  @click="applyExactValueFilter(bucket.value, bucket.type)"
+                >
+                  <span class="min-w-0">
+                    <span class="block text-sm font-semibold leading-5">
+                      {{ formatRedeemValue(bucket.value, bucket.type) }}
+                    </span>
+                    <span class="block truncate text-xs text-gray-500 dark:text-dark-400">
+                      {{ t('admin.redeem.types.' + bucket.type) }}
+                    </span>
+                  </span>
+                  <span
+                    class="rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300"
+                  >
+                    {{ bucket.count }}
+                  </span>
+                </button>
+                <span
+                  v-if="visibleValueBuckets.length === 0"
+                  class="inline-flex min-h-10 items-center text-sm text-gray-400"
+                >
+                  {{ loading ? t('common.loading') : t('empty.noData') }}
+                </span>
+              </div>
+            </div>
+          </section>
 
-          <div
+          <section
             v-if="selectedCount > 0"
-            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 dark:border-primary-800 dark:bg-primary-900/20"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20"
           >
             <div class="flex flex-wrap items-center gap-2 text-sm text-primary-900 dark:text-primary-100">
-              <span class="font-medium">
+              <span class="rounded-md bg-white px-2 py-1 font-semibold shadow-sm dark:bg-dark-800">
                 {{ t('admin.redeem.selectedCount', { count: selectedCount }) }}
               </span>
               <span v-if="selectedValueSummary" class="text-primary-700 dark:text-primary-200">
@@ -129,16 +162,18 @@
             <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                class="text-xs font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
+                class="btn btn-secondary btn-sm"
                 @click="clearSelectedCodes"
               >
+                <Icon name="x" size="sm" />
                 {{ t('admin.redeem.clearSelection') }}
               </button>
               <button type="button" class="btn btn-primary btn-sm" @click="openBatchUpdateDialog">
+                <Icon name="edit" size="sm" />
                 {{ t('admin.redeem.batchUpdate') }}
               </button>
             </div>
-          </div>
+          </section>
         </div>
       </template>
 
@@ -156,6 +191,7 @@
             <input
               data-test="select-all-codes"
               type="checkbox"
+              :aria-label="t('common.selectAll')"
               class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               :checked="allVisibleSelected"
               @click.stop
@@ -167,6 +203,7 @@
             <input
               data-test="select-code"
               type="checkbox"
+              :aria-label="`${t('admin.redeem.columns.code')}: ${row.code}`"
               class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               :checked="selectedCodeIds.has(row.id)"
               @click.stop
@@ -178,6 +215,7 @@
             <div class="flex items-center space-x-2">
               <code class="font-mono text-sm text-gray-900 dark:text-gray-100">{{ value }}</code>
               <button
+                type="button"
                 @click="copyToClipboard(value)"
                 :class="[
                   'flex items-center transition-colors',
@@ -186,16 +224,12 @@
                     : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
                 ]"
                 :title="copiedCode === value ? t('admin.redeem.copied') : t('keys.copyToClipboard')"
+                :aria-label="
+                  copiedCode === value ? t('admin.redeem.copied') : t('keys.copyToClipboard')
+                "
               >
                 <Icon v-if="copiedCode !== value" name="copy" size="sm" :stroke-width="2" />
-                <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
+                <Icon v-else name="check" size="sm" :stroke-width="2" />
               </button>
             </div>
           </template>
@@ -243,16 +277,18 @@
             </span>
           </template>
 
-          <template #cell-used_by="{ value, row }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">
-              {{ row.user?.email || (value ? t('admin.redeem.userPrefix', { id: value }) : '-') }}
-            </span>
-          </template>
-
-          <template #cell-used_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{
-              value ? formatDateTime(value) : '-'
-            }}</span>
+          <template #cell-used_at="{ row }">
+            <div class="min-w-40">
+              <p class="truncate text-sm text-gray-700 dark:text-gray-200">
+                {{
+                  row.user?.email ||
+                  (row.used_by ? t('admin.redeem.userPrefix', { id: row.used_by }) : '-')
+                }}
+              </p>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
+                {{ row.used_at ? formatDateTime(row.used_at) : '-' }}
+              </p>
+            </div>
           </template>
 
           <template #cell-expires_at="{ value, row }">
@@ -269,41 +305,66 @@
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center justify-end">
               <button
                 v-if="row.status === 'unused'"
+                type="button"
                 @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/40 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                :title="t('common.delete')"
+                :aria-label="t('common.delete')"
               >
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-                <span class="text-xs">{{ t('common.delete') }}</span>
+                <Icon name="trash" size="sm" :stroke-width="2" />
               </button>
               <span v-else class="text-gray-400 dark:text-dark-500">-</span>
+            </div>
+          </template>
+
+          <template #empty>
+            <div class="flex flex-col items-center">
+              <div
+                class="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-300"
+              >
+                <Icon name="gift" size="lg" :stroke-width="1.75" />
+              </div>
+              <p class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {{ t('admin.redeem.noCodes') }}
+              </p>
+              <p class="mt-1 max-w-md text-sm text-gray-500 dark:text-dark-400">
+                {{ t('admin.redeem.noCodesDescription') }}
+              </p>
+              <button type="button" class="btn btn-primary btn-sm mt-4" @click="showGenerateDialog = true">
+                <Icon name="plus" size="sm" />
+                {{ t('admin.redeem.generateCodes') }}
+              </button>
             </div>
           </template>
         </DataTable>
       </template>
 
       <template #pagination>
-        <Pagination
-          v-if="pagination.total > 0"
-          :page="pagination.page"
-          :total="pagination.total"
-          :page-size="pagination.page_size"
-          @update:page="handlePageChange"
-          @update:pageSize="handlePageSizeChange"
-        />
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800 lg:flex-row lg:items-center lg:justify-between"
+        >
+          <Pagination
+            v-if="pagination.total > 0"
+            :page="pagination.page"
+            :total="pagination.total"
+            :page-size="pagination.page_size"
+            @update:page="handlePageChange"
+            @update:pageSize="handlePageSizeChange"
+          />
+          <div v-else class="text-sm text-gray-500 dark:text-dark-400">
+            {{ loading ? t('common.loading') : t('empty.noData') }}
+          </div>
 
-        <!-- Batch Actions -->
-        <div v-if="filters.status === 'unused'" class="flex justify-end">
-          <button @click="showDeleteUnusedDialog = true" class="btn btn-danger">
+          <button
+            v-if="filters.status === 'unused'"
+            type="button"
+            class="btn btn-danger btn-sm self-start lg:self-auto"
+            @click="showDeleteUnusedDialog = true"
+          >
+            <Icon name="trash" size="sm" />
             {{ t('admin.redeem.deleteAllUnused') }}
           </button>
         </div>
@@ -820,15 +881,24 @@ const downloadGeneratedCodes = () => {
 }
 
 const columns = computed<Column[]>(() => [
-  { key: 'select', label: '' },
-  { key: 'code', label: t('admin.redeem.columns.code') },
+  { key: 'select', label: '', class: 'w-12' },
+  { key: 'code', label: t('admin.redeem.columns.code'), class: 'min-w-[260px]' },
   { key: 'type', label: t('admin.redeem.columns.type'), sortable: true },
   { key: 'value', label: t('admin.redeem.columns.value'), sortable: true },
   { key: 'status', label: t('admin.redeem.columns.status'), sortable: true },
-  { key: 'used_by', label: t('admin.redeem.columns.usedBy') },
-  { key: 'used_at', label: t('admin.redeem.columns.usedAt'), sortable: true },
-  { key: 'expires_at', label: t('admin.redeem.columns.expiresAt'), sortable: true },
-  { key: 'actions', label: t('admin.redeem.columns.actions') }
+  {
+    key: 'used_at',
+    label: `${t('admin.redeem.columns.usedBy')} / ${t('admin.redeem.columns.usedAt')}`,
+    sortable: true,
+    class: 'min-w-[220px]'
+  },
+  {
+    key: 'expires_at',
+    label: t('admin.redeem.columns.expiresAt'),
+    sortable: true,
+    class: 'min-w-[180px]'
+  },
+  { key: 'actions', label: t('admin.redeem.columns.actions'), class: 'w-16' }
 ])
 
 const typeOptions = computed(() => [

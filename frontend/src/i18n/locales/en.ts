@@ -4350,6 +4350,8 @@ export default {
       expiryDaysRequired: 'Please enter a valid expiry day count',
       groupRequired: 'Please select a subscription group',
       days: ' days',
+      noCodes: 'No redeem codes yet',
+      noCodesDescription: 'Generate redeem codes to distribute balance or concurrency to users.',
       status: {
         unused: 'Unused',
         used: 'Used',
