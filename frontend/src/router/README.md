@@ -13,10 +13,15 @@ This directory contains the Vue Router configuration for the Sub2API frontend ap
 
 ### Public Routes (No Authentication Required)
 
-| Path        | Component    | Description            |
-| ----------- | ------------ | ---------------------- |
-| `/login`    | LoginView    | User login page        |
-| `/register` | RegisterView | User registration page |
+| Path         | Component         | Description                    |
+| ------------ | ----------------- | ------------------------------ |
+| `/home`      | HomeView          | Public home page               |
+| `/login`     | LoginView         | User login page                |
+| `/register`  | RegisterView      | User registration page         |
+| `/key-usage` | KeyUsageView      | Public API key usage lookup    |
+| `/gpt-api-guide` | ApiGuideView      | Public registration guide      |
+| `/guide`     | ApiGuideView      | Short alias for the public guide |
+| `/legal/:id` | LegalDocumentView | Public login agreement document |
 
 ### User Routes (Authentication Required)
 
