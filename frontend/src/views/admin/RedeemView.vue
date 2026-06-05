@@ -129,14 +129,36 @@
                 {{ selectedValueSummary }}
               </span>
             </div>
-            <button
-              type="button"
-              class="btn btn-secondary btn-sm"
-              @click="clearSelectedCodes"
-            >
-              <Icon name="x" size="sm" />
-              {{ t('admin.redeem.clearSelection') }}
-            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-test="copy-selected-codes"
+                :class="[
+                  'btn btn-sm',
+                  copiedSelectedCodes ? 'btn-success' : 'btn-secondary'
+                ]"
+                @click="copySelectedCodes"
+              >
+                <Icon
+                  :name="copiedSelectedCodes ? 'check' : 'copy'"
+                  size="sm"
+                  :stroke-width="2"
+                />
+                {{
+                  copiedSelectedCodes
+                    ? t('admin.redeem.copied')
+                    : t('admin.redeem.copySelectedCodes')
+                }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                @click="clearSelectedCodes"
+              >
+                <Icon name="x" size="sm" />
+                {{ t('admin.redeem.clearSelection') }}
+              </button>
+            </div>
           </section>
         </div>
       </template>
@@ -798,6 +820,7 @@ const showDeleteDialog = ref(false)
 const showDeleteUnusedDialog = ref(false)
 const deletingCode = ref<RedeemCode | null>(null)
 const copiedCode = ref<string | null>(null)
+const copiedSelectedCodes = ref(false)
 
 const {
   selectedSet: selectedCodeIds,
@@ -895,6 +918,13 @@ const selectedValueSummary = computed(() => {
     .map((bucket) => `${formatRedeemValue(bucket.value, bucket.type)} x ${bucket.count}`)
     .join(' / ')
 })
+
+const selectedCodesText = computed(() =>
+  codes.value
+    .filter((code) => selectedCodeIds.value.has(code.id))
+    .map((code) => code.code)
+    .join('\n')
+)
 
 const isValueBucketSelected = (key: string) => selectedValueBucketKeys.value.has(key)
 
@@ -1162,6 +1192,24 @@ const copyToClipboard = async (text: string) => {
     copiedCode.value = text
     setTimeout(() => {
       copiedCode.value = null
+    }, 2000)
+  }
+}
+
+const copySelectedCodes = async () => {
+  if (!selectedCodesText.value) {
+    appStore.showError(t('admin.redeem.noSelectedCodesToCopy'))
+    return
+  }
+
+  const success = await clipboardCopy(
+    selectedCodesText.value,
+    t('admin.redeem.selectedCodesCopied')
+  )
+  if (success) {
+    copiedSelectedCodes.value = true
+    setTimeout(() => {
+      copiedSelectedCodes.value = false
     }, 2000)
   }
 }

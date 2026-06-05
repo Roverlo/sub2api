@@ -8,6 +8,7 @@ const {
   listRedeemValueBuckets,
   batchUpdateRedeemCodes,
   getAllGroups,
+  copyToClipboard,
   showSuccess,
   showError,
   showInfo
@@ -16,6 +17,7 @@ const {
   listRedeemValueBuckets: vi.fn(),
   batchUpdateRedeemCodes: vi.fn(),
   getAllGroups: vi.fn(),
+  copyToClipboard: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn(),
   showInfo: vi.fn()
@@ -48,7 +50,7 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/composables/useClipboard', () => ({
   useClipboard: () => ({
-    copyToClipboard: vi.fn()
+    copyToClipboard
   })
 }))
 
@@ -120,6 +122,7 @@ describe('admin RedeemView selection actions', () => {
     listRedeemValueBuckets.mockReset()
     batchUpdateRedeemCodes.mockReset()
     getAllGroups.mockReset()
+    copyToClipboard.mockReset()
     showSuccess.mockReset()
     showError.mockReset()
     showInfo.mockReset()
@@ -160,6 +163,7 @@ describe('admin RedeemView selection actions', () => {
     ])
     batchUpdateRedeemCodes.mockResolvedValue({ updated: 1, message: 'ok' })
     getAllGroups.mockResolvedValue([])
+    copyToClipboard.mockResolvedValue(true)
   })
 
   it('does not expose batch update actions for selected redeem codes', async () => {
@@ -192,6 +196,42 @@ describe('admin RedeemView selection actions', () => {
     expect(document.body.textContent).not.toContain('admin.redeem.batchUpdate')
     expect(document.body.textContent).not.toContain('admin.redeem.batchUpdateTitle')
     expect(batchUpdateRedeemCodes).not.toHaveBeenCalled()
+  })
+
+  it('copies selected redeem codes one per line', async () => {
+    const wrapper = mount(RedeemView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          Select: SelectStub,
+          GroupBadge: true,
+          GroupOptionItem: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    const checkboxes = wrapper.findAll('[data-test="select-code"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await flushPromises()
+
+    await wrapper.find('[data-test="copy-selected-codes"]').trigger('click')
+    await flushPromises()
+
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      'CODE-1\nCODE-2',
+      'admin.redeem.selectedCodesCopied'
+    )
   })
 
   it('filters redeem code list by multiple selected value buckets', async () => {
