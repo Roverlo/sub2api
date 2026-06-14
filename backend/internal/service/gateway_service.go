@@ -2132,14 +2132,16 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		}
 
 		selectionKey := accountLoadRoundRobinKey("load", groupID, platform, requestedModel)
-		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+		if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
+			available = buildQuotaBalancedAccountLoadOrder(ctx, s, available, preferOAuth, selectionKey+":quota")
+		} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 			available = buildRoundRobinAccountLoadOrder(ctx, s, available, preferOAuth, selectionKey)
 		}
 
-		// 分层过滤选择：优先级 → 负载率 → LRU/轮询
+		// 分层过滤选择：优先级 → 负载率 → LRU/轮询/额度均衡
 		for len(available) > 0 {
 			var selected *accountWithLoad
-			if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+			if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) || isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
 				selected = &available[0]
 			} else {
 				// 1. 取优先级最小的集合
@@ -2198,7 +2200,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool, platform string, requestedModel string) (*AccountSelectionResult, bool, error) {
 	cfg := s.schedulingConfig()
 	ordered := append([]*Account(nil), candidates...)
-	if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+	if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
+		ordered = buildQuotaBalancedAccountOrder(ctx, s, ordered, preferOAuth, accountLoadRoundRobinKey("legacy_acquire_quota", groupID, platform, requestedModel))
+	} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 		ordered = buildRoundRobinAccountOrder(ctx, s, ordered, preferOAuth, accountLoadRoundRobinKey("legacy_acquire", groupID, platform, requestedModel))
 	} else {
 		sortAccountsByPriorityAndLastUsed(ordered, preferOAuth)
@@ -3093,7 +3097,7 @@ func sameLastUsedAt(a, b *time.Time) bool {
 }
 
 // sortCandidatesForFallback 根据配置选择排序策略
-// mode: "last_used"(按最后使用时间), "random"(随机), "round_robin"(轮询)
+// mode: "last_used"(按最后使用时间), "random"(随机), "round_robin"(轮询), "quota_balanced"(额度均衡)
 func (s *GatewayService) sortCandidatesForFallback(ctx context.Context, accounts []*Account, preferOAuth bool, mode string, key string) {
 	switch normalizeFallbackSelectionMode(mode) {
 	case SchedulerFallbackSelectionRandom:
@@ -3102,6 +3106,9 @@ func (s *GatewayService) sortCandidatesForFallback(ctx context.Context, accounts
 		shuffleWithinPriority(accounts)
 	case SchedulerFallbackSelectionRoundRobin:
 		ordered := buildRoundRobinAccountOrder(ctx, s, accounts, preferOAuth, key)
+		copy(accounts, ordered)
+	case SchedulerFallbackSelectionQuotaBalanced:
+		ordered := buildQuotaBalancedAccountOrder(ctx, s, accounts, preferOAuth, key+":quota")
 		copy(accounts, ordered)
 	default:
 		// 默认按最后使用时间排序

@@ -294,6 +294,15 @@ func TestValidateSchedulingFallbackSelectionMode(t *testing.T) {
 	require.Contains(t, err.Error(), "gateway.scheduling.fallback_selection_mode")
 }
 
+func TestValidateSchedulingFallbackSelectionModeQuotaBalanced(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_SCHEDULING_FALLBACK_SELECTION_MODE", "quota_balanced")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "quota_balanced", cfg.Gateway.Scheduling.FallbackSelectionMode)
+}
+
 func TestLoadWeChatConnectConfigFromLegacyEnv(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("WECHAT_OAUTH_OPEN_APP_ID", "wx-open-app")

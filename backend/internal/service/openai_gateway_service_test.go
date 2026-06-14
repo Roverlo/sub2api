@@ -528,6 +528,70 @@ func TestOpenAISelectAccountWithLoadAwareness_RoundRobinSelectionMode(t *testing
 	require.Equal(t, []int64{9101, 9102, 9101, 9102}, selected)
 }
 
+func TestOpenAISelectAccountWithLoadAwareness_QuotaBalancedSelectionMode(t *testing.T) {
+	resetLocalRoundRobinCountersForTest()
+	groupID := int64(102)
+	accounts := []Account{
+		{
+			ID:          9201,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+			Extra: map[string]any{
+				"codex_7d_used_percent": 80.0,
+				"codex_5h_used_percent": 1.0,
+			},
+		},
+		{
+			ID:          9202,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+			Extra: map[string]any{
+				"codex_7d_used_percent": 20.0,
+				"codex_5h_used_percent": 20.0,
+			},
+		},
+		{
+			ID:          9203,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    1,
+			Extra: map[string]any{
+				"codex_7d_used_percent": 1.0,
+				"codex_5h_used_percent": 1.0,
+			},
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionQuotaBalanced
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-5.2", nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(9202), selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_ImageRateLimitSkipsOnlyImageRequests(t *testing.T) {
 	future := time.Now().Add(10 * time.Minute).Format(time.RFC3339)
 	groupID := int64(1)

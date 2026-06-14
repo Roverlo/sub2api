@@ -794,6 +794,10 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 			groupTopK = len(pool)
 		}
 		ranked := selectTopKOpenAICandidates(pool, groupTopK)
+		if isQuotaBalancedSelectionMode(s.service.schedulingConfig().FallbackSelectionMode) {
+			key := accountRoundRobinKey("openai_advanced_quota_"+keySuffix, req.GroupID, PlatformOpenAI, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
+			return buildQuotaBalancedOpenAICandidateOrder(ctx, s.service, ranked, key)
+		}
 		if isRoundRobinSelectionMode(s.service.schedulingConfig().FallbackSelectionMode) {
 			key := accountRoundRobinKey("openai_advanced_"+keySuffix, req.GroupID, PlatformOpenAI, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 			return rotateAccountCandidatesByOffset(ranked, nextRoundRobinOffset(ctx, s.service, key, len(ranked)))

@@ -1052,7 +1052,7 @@ type GatewaySchedulingConfig struct {
 	FallbackWaitTimeout time.Duration `mapstructure:"fallback_wait_timeout"`
 	FallbackMaxWaiting  int           `mapstructure:"fallback_max_waiting"`
 
-	// 兜底层账户选择策略: "last_used"(按最后使用时间排序，默认)、"random"(随机) 或 "round_robin"(轮询)
+	// 兜底层账户选择策略: "last_used"(按最后使用时间排序，默认)、"random"(随机)、"round_robin"(轮询) 或 "quota_balanced"(按额度使用率均衡)
 	FallbackSelectionMode string `mapstructure:"fallback_selection_mode"`
 
 	// 负载计算
@@ -2745,9 +2745,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("gateway.scheduling.fallback_max_waiting must be positive")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Gateway.Scheduling.FallbackSelectionMode)) {
-	case "", "last_used", "random", "round_robin", "round-robin", "roundrobin", "rr":
+	case "", "last_used", "random", "round_robin", "round-robin", "roundrobin", "rr", "quota_balanced", "quota-balanced", "quota_balance", "quotabalanced", "quota":
 	default:
-		return fmt.Errorf("gateway.scheduling.fallback_selection_mode must be one of: last_used/random/round_robin")
+		return fmt.Errorf("gateway.scheduling.fallback_selection_mode must be one of: last_used/random/round_robin/quota_balanced")
 	}
 	if c.Gateway.Scheduling.LoadBatchCacheTTLMS < 0 {
 		return fmt.Errorf("gateway.scheduling.load_batch_cache_ttl_ms must be non-negative")

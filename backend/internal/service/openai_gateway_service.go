@@ -1739,6 +1739,9 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 	if isRoundRobinSelectionMode(s.schedulingConfig().FallbackSelectionMode) {
 		return s.selectBestAccountRoundRobin(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability)
 	}
+	if isQuotaBalancedSelectionMode(s.schedulingConfig().FallbackSelectionMode) {
+		return s.selectBestAccountQuotaBalanced(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability)
+	}
 
 	var selected *Account
 	selectedCompactTier := -1
@@ -1833,6 +1836,45 @@ func (s *OpenAIGatewayService) selectBestAccountRoundRobin(ctx context.Context, 
 
 	key := accountRoundRobinKey("openai_best", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
 	ordered := buildRoundRobinOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
+	if len(ordered) == 0 {
+		return nil, compactBlocked
+	}
+	return ordered[0], compactBlocked
+}
+
+func (s *OpenAIGatewayService) selectBestAccountQuotaBalanced(ctx context.Context, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability) (*Account, bool) {
+	compactBlocked := false
+	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
+	candidates := make([]*Account, 0, len(accounts))
+
+	for i := range accounts {
+		acc := &accounts[i]
+		if _, excluded := excludedIDs[acc.ID]; excluded {
+			continue
+		}
+		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, requestedModel, false, requiredCapability)
+		if fresh == nil {
+			continue
+		}
+		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, requestedModel, false, requiredCapability)
+		if fresh == nil {
+			continue
+		}
+		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
+			continue
+		}
+		if requireCompact && openAICompactSupportTier(fresh) == 0 {
+			compactBlocked = true
+			continue
+		}
+		candidates = append(candidates, fresh)
+	}
+	if len(candidates) == 0 {
+		return nil, compactBlocked
+	}
+
+	key := accountRoundRobinKey("openai_best_quota", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+	ordered := buildQuotaBalancedOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
 	if len(ordered) == 0 {
 		return nil, compactBlocked
 	}
@@ -2039,7 +2081,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 
 		selectionOrder := make([]accountWithLoad, 0, len(available))
-		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+		if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
+			key := accountRoundRobinKey("openai_load_quota", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+			selectionOrder = buildQuotaBalancedOpenAIAccountLoadOrder(ctx, s, available, key, requireCompact, true)
+		} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 			key := accountRoundRobinKey("openai_load", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
 			selectionOrder = buildRoundRobinOpenAIAccountLoadOrder(ctx, s, available, key, requireCompact, true)
 		} else if requireCompact {
@@ -2130,14 +2175,17 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
 	if err != nil {
 		var ordered []*Account
-		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+		if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
+			key := accountRoundRobinKey("openai_load_error_quota", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+			ordered = buildQuotaBalancedOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
+		} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 			key := accountRoundRobinKey("openai_load_error", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
 			ordered = buildRoundRobinOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
 		} else {
 			ordered = append([]*Account(nil), candidates...)
 			sortAccountsByPriorityAndLastUsed(ordered, false)
 		}
-		if requireCompact && !isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+		if requireCompact && !isRoundRobinSelectionMode(cfg.FallbackSelectionMode) && !isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
 			ordered = prioritizeOpenAICompactAccounts(ordered)
 		}
 		for _, acc := range ordered {
@@ -2181,13 +2229,16 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
-	if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+	if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
+		key := accountRoundRobinKey("openai_wait_quota", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+		candidates = buildQuotaBalancedOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
+	} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 		key := accountRoundRobinKey("openai_wait", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
 		candidates = buildRoundRobinOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
 	} else {
 		sortAccountsByPriorityAndLastUsed(candidates, false)
 	}
-	if requireCompact && !isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+	if requireCompact && !isRoundRobinSelectionMode(cfg.FallbackSelectionMode) && !isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
 		candidates = prioritizeOpenAICompactAccounts(candidates)
 	}
 	for _, acc := range candidates {
