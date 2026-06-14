@@ -2188,6 +2188,79 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceDistributesA
 	require.GreaterOrEqual(t, len(selected), 2)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithScheduler_RoundRobinTopK(t *testing.T) {
+	resetLocalRoundRobinCountersForTest()
+	ctx := context.Background()
+	groupID := int64(151)
+	accounts := []Account{
+		{
+			ID:          5201,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+		},
+		{
+			ID:          5202,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+		},
+		{
+			ID:          5203,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    1,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionRoundRobin
+	cfg.Gateway.OpenAIWS.LBTopK = 2
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 1
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 1
+
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	var selected []int64
+	for i := 0; i < 4; i++ {
+		selection, decision, err := svc.SelectAccountWithScheduler(
+			ctx,
+			&groupID,
+			"",
+			"",
+			"gpt-5.1",
+			nil,
+			OpenAIUpstreamTransportAny,
+			false,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, selection)
+		require.NotNil(t, selection.Account)
+		require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+		selected = append(selected, selection.Account.ID)
+		if selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+	}
+
+	require.Equal(t, []int64{5201, 5202, 5201, 5202}, selected)
+}
+
 func TestDeriveOpenAISelectionSeed_NoAffinityAddsEntropy(t *testing.T) {
 	req := OpenAIAccountScheduleRequest{
 		RequestedModel: "gpt-5.1",

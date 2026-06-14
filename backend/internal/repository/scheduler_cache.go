@@ -18,6 +18,7 @@ const (
 	schedulerAccountMetaPrefix  = "sched:meta:"
 	schedulerActivePrefix       = "sched:active:"
 	schedulerReadyPrefix        = "sched:ready:"
+	schedulerRoundRobinPrefix   = "sched:rr:"
 	schedulerVersionPrefix      = "sched:ver:"
 	schedulerSnapshotPrefix     = "sched:"
 	schedulerLockPrefix         = "sched:lock:"
@@ -275,6 +276,17 @@ func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]t
 	}
 	_, err = pipe.Exec(ctx)
 	return err
+}
+
+func (c *schedulerCache) NextRoundRobin(ctx context.Context, key string) (uint64, error) {
+	if key == "" {
+		key = "default"
+	}
+	value, err := c.rdb.Incr(ctx, schedulerRoundRobinPrefix+key).Uint64()
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
 }
 
 func (c *schedulerCache) TryLockBucket(ctx context.Context, bucket service.SchedulerBucket, ttl time.Duration) (bool, error) {

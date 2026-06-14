@@ -421,6 +421,9 @@ gateway:
     # Fallback max waiting queue size
     # 兜底最大排队长度
     fallback_max_waiting: 100
+    # Fallback account selection mode: last_used, random, or round_robin
+    # 兜底账号选择策略：last_used（最久未用）、random（随机）或 round_robin（轮询）
+    fallback_selection_mode: last_used
     # Enable batch load calculation for scheduling
     # 启用调度批量负载计算
     load_batch_enabled: true

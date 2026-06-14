@@ -1736,6 +1736,10 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 // least one candidate was filtered out solely because it lacks compact support
 // (only meaningful when requireCompact=true).
 func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability) (*Account, bool) {
+	if isRoundRobinSelectionMode(s.schedulingConfig().FallbackSelectionMode) {
+		return s.selectBestAccountRoundRobin(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability)
+	}
+
 	var selected *Account
 	selectedCompactTier := -1
 	compactBlocked := false
@@ -1794,6 +1798,45 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 	}
 
 	return selected, compactBlocked
+}
+
+func (s *OpenAIGatewayService) selectBestAccountRoundRobin(ctx context.Context, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability) (*Account, bool) {
+	compactBlocked := false
+	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
+	candidates := make([]*Account, 0, len(accounts))
+
+	for i := range accounts {
+		acc := &accounts[i]
+		if _, excluded := excludedIDs[acc.ID]; excluded {
+			continue
+		}
+		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, requestedModel, false, requiredCapability)
+		if fresh == nil {
+			continue
+		}
+		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, requestedModel, false, requiredCapability)
+		if fresh == nil {
+			continue
+		}
+		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
+			continue
+		}
+		if requireCompact && openAICompactSupportTier(fresh) == 0 {
+			compactBlocked = true
+			continue
+		}
+		candidates = append(candidates, fresh)
+	}
+	if len(candidates) == 0 {
+		return nil, compactBlocked
+	}
+
+	key := accountRoundRobinKey("openai_best", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+	ordered := buildRoundRobinOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
+	if len(ordered) == 0 {
+		return nil, compactBlocked
+	}
+	return ordered[0], compactBlocked
 }
 
 // isBetterAccount 判断 candidate 是否比 current 更优。
@@ -1995,29 +2038,31 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			return nil, false, nil
 		}
 
-		sort.SliceStable(available, func(i, j int) bool {
-			a, b := available[i], available[j]
-			if a.account.Priority != b.account.Priority {
-				return a.account.Priority < b.account.Priority
-			}
-			if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-				return a.loadInfo.LoadRate < b.loadInfo.LoadRate
-			}
-			switch {
-			case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
-				return true
-			case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
-				return false
-			case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
-				return false
-			default:
-				return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
-			}
-		})
-		shuffleWithinSortGroups(available)
-
 		selectionOrder := make([]accountWithLoad, 0, len(available))
-		if requireCompact {
+		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+			key := accountRoundRobinKey("openai_load", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+			selectionOrder = buildRoundRobinOpenAIAccountLoadOrder(ctx, s, available, key, requireCompact, true)
+		} else if requireCompact {
+			sort.SliceStable(available, func(i, j int) bool {
+				a, b := available[i], available[j]
+				if a.account.Priority != b.account.Priority {
+					return a.account.Priority < b.account.Priority
+				}
+				if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
+					return a.loadInfo.LoadRate < b.loadInfo.LoadRate
+				}
+				switch {
+				case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
+					return true
+				case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
+					return false
+				case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
+					return false
+				default:
+					return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
+				}
+			})
+			shuffleWithinSortGroups(available)
 			appendTier := func(out []accountWithLoad, tier int) []accountWithLoad {
 				for _, item := range available {
 					if openAICompactSupportTier(item.account) == tier {
@@ -2032,6 +2077,26 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			// 已升级为 1/2（探测刚跑完，cache 尚未刷新），仍可正常命中。
 			selectionOrder = appendTier(selectionOrder, 0)
 		} else {
+			sort.SliceStable(available, func(i, j int) bool {
+				a, b := available[i], available[j]
+				if a.account.Priority != b.account.Priority {
+					return a.account.Priority < b.account.Priority
+				}
+				if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
+					return a.loadInfo.LoadRate < b.loadInfo.LoadRate
+				}
+				switch {
+				case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
+					return true
+				case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
+					return false
+				case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
+					return false
+				default:
+					return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
+				}
+			})
+			shuffleWithinSortGroups(available)
 			selectionOrder = append(selectionOrder, available...)
 		}
 
@@ -2064,9 +2129,15 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
 	if err != nil {
-		ordered := append([]*Account(nil), candidates...)
-		sortAccountsByPriorityAndLastUsed(ordered, false)
-		if requireCompact {
+		var ordered []*Account
+		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+			key := accountRoundRobinKey("openai_load_error", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+			ordered = buildRoundRobinOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
+		} else {
+			ordered = append([]*Account(nil), candidates...)
+			sortAccountsByPriorityAndLastUsed(ordered, false)
+		}
+		if requireCompact && !isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 			ordered = prioritizeOpenAICompactAccounts(ordered)
 		}
 		for _, acc := range ordered {
@@ -2110,8 +2181,13 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
-	sortAccountsByPriorityAndLastUsed(candidates, false)
-	if requireCompact {
+	if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+		key := accountRoundRobinKey("openai_wait", groupID, PlatformOpenAI, requestedModel, requireCompact, requiredCapability)
+		candidates = buildRoundRobinOpenAIAccountOrder(ctx, s, candidates, key, requireCompact)
+	} else {
+		sortAccountsByPriorityAndLastUsed(candidates, false)
+	}
+	if requireCompact && !isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 		candidates = prioritizeOpenAICompactAccounts(candidates)
 	}
 	for _, acc := range candidates {
@@ -2274,6 +2350,7 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		StickySessionWaitTimeout: 45 * time.Second,
 		FallbackWaitTimeout:      30 * time.Second,
 		FallbackMaxWaiting:       100,
+		FallbackSelectionMode:    SchedulerFallbackSelectionLastUsed,
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
 	}

@@ -57,6 +57,8 @@ type SchedulerCache interface {
 	DeleteAccount(ctx context.Context, accountID int64) error
 	// UpdateLastUsed 批量更新账号的最后使用时间。
 	UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error
+	// NextRoundRobin 递增并返回指定调度池的轮询计数。
+	NextRoundRobin(ctx context.Context, key string) (uint64, error)
 	// TryLockBucket 尝试获取分桶重建锁。
 	TryLockBucket(ctx context.Context, bucket SchedulerBucket, ttl time.Duration) (bool, error)
 	// UnlockBucket 释放分桶重建锁。

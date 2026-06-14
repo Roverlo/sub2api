@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 type snapshotHydrationCache struct {
 	snapshot []*Account
 	accounts map[int64]*Account
+	rr       atomic.Uint64
 }
 
 func (c *snapshotHydrationCache) GetSnapshot(ctx context.Context, bucket SchedulerBucket) ([]*Account, bool, error) {
@@ -40,6 +42,10 @@ func (c *snapshotHydrationCache) DeleteAccount(ctx context.Context, accountID in
 
 func (c *snapshotHydrationCache) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
 	return nil
+}
+
+func (c *snapshotHydrationCache) NextRoundRobin(ctx context.Context, key string) (uint64, error) {
+	return c.rr.Add(1), nil
 }
 
 func (c *snapshotHydrationCache) TryLockBucket(ctx context.Context, bucket SchedulerBucket, ttl time.Duration) (bool, error) {

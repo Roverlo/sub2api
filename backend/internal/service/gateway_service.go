@@ -2111,7 +2111,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
 	if err != nil {
-		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, candidates, groupID, sessionHash, preferOAuth); legacyErr != nil {
+		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, candidates, groupID, sessionHash, preferOAuth, platform, requestedModel); legacyErr != nil {
 			return nil, legacyErr
 		} else if ok {
 			return result, nil
@@ -2131,14 +2131,24 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 		}
 
-		// 分层过滤选择：优先级 → 负载率 → LRU
+		selectionKey := accountLoadRoundRobinKey("load", groupID, platform, requestedModel)
+		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+			available = buildRoundRobinAccountLoadOrder(ctx, s, available, preferOAuth, selectionKey)
+		}
+
+		// 分层过滤选择：优先级 → 负载率 → LRU/轮询
 		for len(available) > 0 {
-			// 1. 取优先级最小的集合
-			candidates := filterByMinPriority(available)
-			// 2. 取负载率最低的集合
-			candidates = filterByMinLoadRate(candidates)
-			// 3. LRU 选择最久未用的账号
-			selected := selectByLRU(candidates, preferOAuth)
+			var selected *accountWithLoad
+			if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+				selected = &available[0]
+			} else {
+				// 1. 取优先级最小的集合
+				candidates := filterByMinPriority(available)
+				// 2. 取负载率最低的集合
+				candidates = filterByMinLoadRate(candidates)
+				// 3. LRU 选择最久未用的账号
+				selected = selectByLRU(candidates, preferOAuth)
+			}
 			if selected == nil {
 				break
 			}
@@ -2169,7 +2179,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	// ============ Layer 3: 兜底排队 ============
-	s.sortCandidatesForFallback(candidates, preferOAuth, cfg.FallbackSelectionMode)
+	s.sortCandidatesForFallback(ctx, candidates, preferOAuth, cfg.FallbackSelectionMode, accountLoadRoundRobinKey("fallback_wait", groupID, platform, requestedModel))
 	for _, acc := range candidates {
 		// 会话数量限制检查（等待计划也需要占用会话配额）
 		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
@@ -2185,9 +2195,14 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	return nil, ErrNoAvailableAccounts
 }
 
-func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool) (*AccountSelectionResult, bool, error) {
+func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool, platform string, requestedModel string) (*AccountSelectionResult, bool, error) {
+	cfg := s.schedulingConfig()
 	ordered := append([]*Account(nil), candidates...)
-	sortAccountsByPriorityAndLastUsed(ordered, preferOAuth)
+	if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
+		ordered = buildRoundRobinAccountOrder(ctx, s, ordered, preferOAuth, accountLoadRoundRobinKey("legacy_acquire", groupID, platform, requestedModel))
+	} else {
+		sortAccountsByPriorityAndLastUsed(ordered, preferOAuth)
+	}
 
 	for _, acc := range ordered {
 		result, err := s.tryAcquireAccountSlot(ctx, acc.ID, acc.Concurrency)
@@ -2220,6 +2235,7 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		StickySessionWaitTimeout: 45 * time.Second,
 		FallbackWaitTimeout:      30 * time.Second,
 		FallbackMaxWaiting:       100,
+		FallbackSelectionMode:    SchedulerFallbackSelectionLastUsed,
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
 	}
@@ -3077,13 +3093,17 @@ func sameLastUsedAt(a, b *time.Time) bool {
 }
 
 // sortCandidatesForFallback 根据配置选择排序策略
-// mode: "last_used"(按最后使用时间) 或 "random"(随机)
-func (s *GatewayService) sortCandidatesForFallback(accounts []*Account, preferOAuth bool, mode string) {
-	if mode == "random" {
+// mode: "last_used"(按最后使用时间), "random"(随机), "round_robin"(轮询)
+func (s *GatewayService) sortCandidatesForFallback(ctx context.Context, accounts []*Account, preferOAuth bool, mode string, key string) {
+	switch normalizeFallbackSelectionMode(mode) {
+	case SchedulerFallbackSelectionRandom:
 		// 先按优先级排序，然后在同优先级内随机打乱
 		sortAccountsByPriorityOnly(accounts, preferOAuth)
 		shuffleWithinPriority(accounts)
-	} else {
+	case SchedulerFallbackSelectionRoundRobin:
+		ordered := buildRoundRobinAccountOrder(ctx, s, accounts, preferOAuth, key)
+		copy(accounts, ordered)
+	default:
 		// 默认按最后使用时间排序
 		sortAccountsByPriorityAndLastUsed(accounts, preferOAuth)
 	}

@@ -270,6 +270,7 @@ func TestLoadIdempotencyConfigFromEnv(t *testing.T) {
 func TestLoadSchedulingConfigFromEnv(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("GATEWAY_SCHEDULING_STICKY_SESSION_MAX_WAITING", "5")
+	t.Setenv("GATEWAY_SCHEDULING_FALLBACK_SELECTION_MODE", "round_robin")
 
 	cfg, err := Load()
 	if err != nil {
@@ -279,6 +280,18 @@ func TestLoadSchedulingConfigFromEnv(t *testing.T) {
 	if cfg.Gateway.Scheduling.StickySessionMaxWaiting != 5 {
 		t.Fatalf("StickySessionMaxWaiting = %d, want 5", cfg.Gateway.Scheduling.StickySessionMaxWaiting)
 	}
+	if cfg.Gateway.Scheduling.FallbackSelectionMode != "round_robin" {
+		t.Fatalf("FallbackSelectionMode = %q, want round_robin", cfg.Gateway.Scheduling.FallbackSelectionMode)
+	}
+}
+
+func TestValidateSchedulingFallbackSelectionMode(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_SCHEDULING_FALLBACK_SELECTION_MODE", "bad-mode")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway.scheduling.fallback_selection_mode")
 }
 
 func TestLoadWeChatConnectConfigFromLegacyEnv(t *testing.T) {
