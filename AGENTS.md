@@ -55,7 +55,6 @@ Pop-Location
 - SSH 用户：`root`
 - 本机私钥：`C:\Users\胡文雨\.ssh\sub2api_vps_ed25519`
 - 本机公钥：`C:\Users\胡文雨\.ssh\sub2api_vps_ed25519.pub`
-- 注意：用户曾误写过 `200002`，这是无效端口；实际可用端口是 `20002`。
 - 不要把私钥内容写入仓库、日志、Issue、PR 或聊天回复。文档中只允许引用本机路径。
 
 连接命令：
@@ -76,6 +75,7 @@ scp -i "$env:USERPROFILE\.ssh\sub2api_vps_ed25519" -P 20002 `
 
 - 除非用户明确要求部署，否则不要推送、发布或切换 VPS。
 - 用户曾明确要求过“先合并更新，但是先不要推送到我的 VPS”；后续相同场景默认只合并、验证、推送 GitHub fork，不部署 VPS。
+- 用户要求部署前，先检查 VPS 资源情况。部署方式应尽量减少中断影响，缩短中断时长。
 - VPS 上的项目目录：`/opt/sub2api`
 - Compose 文件：`/opt/sub2api/docker-compose.yml`
 - 应用容器：`sub2api`
@@ -83,6 +83,45 @@ scp -i "$env:USERPROFILE\.ssh\sub2api_vps_ed25519" -P 20002 `
 - 公网流量路径：Nginx `443/80` -> 宿主机本地端口 -> 容器 `8080`
 - 常用本机健康检查端口：`http://127.0.0.1:18080/health`
 - PostgreSQL 和 Redis 是独立容器；应用镜像更新时只重建 `sub2api`，不要无故重启数据库或 Redis。
+
+## VPS 基础信息快照
+
+以下信息是 2026-06-15 通过只读 SSH 检查得到的现场快照；资源占用、容器状态、Docker 版本和 Nginx 配置以后可能变化。部署、排障或扩容前必须重新核对。
+
+- 主机名：`lfw2400`
+- 系统：Debian GNU/Linux 12，Linux `6.1.0-9-amd64`，`x86_64`
+- 资源快照：2 vCPU，约 `1.9GiB` 内存；检查时可用内存约 `951MiB`，根分区约 `29G`，可用约 `9.2G`
+- Docker：`Docker version 29.1.4`
+- Docker Compose：`Docker Compose version v5.0.1`
+- Compose services：`sub2api`、`postgres`、`redis`
+- 当前容器基线：
+  - `sub2api`：镜像 `sub2api:ai-sdk-compat`，端口 `127.0.0.1:18080->8080/tcp`，应为 `healthy`
+  - `sub2api-postgres`：镜像 `postgres:18-alpine`，应为 `healthy`
+  - `sub2api-redis`：镜像 `redis:8-alpine`，应为 `healthy`
+- 项目和数据目录：
+  - `/opt/sub2api`
+  - `/opt/sub2api/backups`
+  - `/opt/sub2api/data`
+  - `/opt/sub2api/postgres_data`
+  - `/opt/sub2api/redis_data`
+- Nginx：`nginx -t` 当前应通过；已观察到的站点包括 `codex.260213.xyz`、`default`、`update.xiaohulp.sbs`，`conf.d` 下有 `sub2api-upgrade.conf`
+- `codex.260213.xyz` 当前监听 `80` 和 `443 ssl http2`，反代到 `http://127.0.0.1:18080`；`/assets/` 有单独的静态资源优化配置，曾用于改善前端 chunk 加载速度
+
+部署或排障前建议先跑：
+
+```bash
+hostname
+uname -srmo
+. /etc/os-release && printf '%s %s\n' "$NAME" "$VERSION_ID"
+nproc
+free -h
+df -h / /opt /opt/sub2api
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+cd /opt/sub2api && docker compose ps
+docker inspect sub2api --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
+curl -sS -o /dev/null -w 'health_http=%{http_code} total=%{time_total}\n' http://127.0.0.1:18080/health
+nginx -t
+```
 
 ## VPS 更新流程
 
