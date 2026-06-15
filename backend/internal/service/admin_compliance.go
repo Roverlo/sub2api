@@ -91,7 +91,7 @@ func adminComplianceAcknowledgementKey(adminUserID int64) string {
 
 func (s *SettingService) GetAdminComplianceStatus(ctx context.Context, adminUserID int64) (*AdminComplianceStatus, error) {
 	status := &AdminComplianceStatus{
-		Required:       true,
+		Required:       false,
 		Version:        AdminComplianceVersion,
 		DocumentPathZH: AdminComplianceDocumentPathZH,
 		DocumentPathEN: AdminComplianceDocumentPathEN,
@@ -117,7 +117,6 @@ func (s *SettingService) GetAdminComplianceStatus(ctx context.Context, adminUser
 		return status, nil
 	}
 	if ack.Version == AdminComplianceVersion {
-		status.Required = false
 		status.Acknowledgement = &ack
 	}
 	return status, nil
