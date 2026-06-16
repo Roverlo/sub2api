@@ -144,6 +144,57 @@ docker build `
 docker run --rm $tag --version
 ```
 
+Docker Desktop 代理注意事项：
+
+- Docker daemon 可能不会读取 Windows 用户代理或 Git/PowerShell 代理配置。构建时如果卡在拉取 Docker Hub 基础镜像，常见报错类似 `Docker Desktop has no HTTPS proxy`、`failed to resolve source metadata for docker.io/library/...`、`connectex` 超时。
+- 如果只是后端代码小改，且本机已有当前线上运行时镜像 `sub2api:ai-sdk-compat`，可以用备用流程绕过 Docker Hub 拉取：在临时目录从当前提交构建前端 dist 和 Linux 后端二进制，再基于已有 `sub2api:ai-sdk-compat` 只替换 `/app/sub2api` 生成新镜像。
+- 备用流程只适合未修改 Dockerfile、基础镜像、系统依赖、运行时依赖和入口脚本的场景。如果这些内容有变化，应先修复 Docker Desktop 代理或基础镜像拉取问题，再走完整 `docker build`。
+- PowerShell 下不要优先使用 `docker commit --change 'ENTRYPOINT [...]'` 改入口点，历史上容易因引号传递变成错误的 shell 字符串。备用流程应使用临时 Dockerfile，保留基底镜像的 `ENTRYPOINT` / `CMD`。
+
+备用本机构建示例：
+
+```powershell
+$commit = git rev-parse --short HEAD
+$version = git describe --tags --always --dirty
+$buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+$tmpRoot = Join-Path $env:TEMP "sub2api-build-$commit"
+$srcTar = Join-Path $env:TEMP "sub2api-src-$commit.tar"
+$tag = "sub2api:<new-image-tag>"
+
+if (Test-Path $tmpRoot) { Remove-Item -LiteralPath $tmpRoot -Recurse -Force }
+if (Test-Path $srcTar) { Remove-Item -LiteralPath $srcTar -Force }
+New-Item -ItemType Directory -Path $tmpRoot | Out-Null
+git archive --format=tar -o $srcTar HEAD
+tar -xf $srcTar -C $tmpRoot
+
+Push-Location (Join-Path $tmpRoot 'frontend')
+pnpm install --frozen-lockfile
+pnpm run build
+Pop-Location
+
+Push-Location (Join-Path $tmpRoot 'backend')
+$env:CGO_ENABLED='0'
+$env:GOOS='linux'
+$env:GOARCH='amd64'
+go build -tags embed `
+  -ldflags "-s -w -X main.Version=$version -X main.Commit=$commit -X main.Date=$buildDate -X main.BuildType=release" `
+  -trimpath `
+  -o (Join-Path $tmpRoot 'sub2api') `
+  ./cmd/server
+Pop-Location
+
+$dockerfile = Join-Path $tmpRoot 'Dockerfile.runtime'
+@'
+FROM sub2api:ai-sdk-compat
+USER root
+COPY sub2api /app/sub2api
+RUN chown sub2api:sub2api /app/sub2api && chmod 755 /app/sub2api
+'@ | Set-Content -LiteralPath $dockerfile -Encoding ASCII
+
+docker build -f $dockerfile -t $tag $tmpRoot
+docker run --rm $tag --version
+```
+
 保存并上传：
 
 ```powershell
@@ -200,3 +251,20 @@ docker image inspect sub2api:<new-image-tag> --format '{{.Id}}'
 ```
 
 `docker ps` 仍会显示 Compose 配置里的 `sub2api:ai-sdk-compat` 标签；判断是否真的切到新镜像，要比较 image ID 或查看容器内 `/app/sub2api --version`。
+
+特定兼容修复的验证经验：
+
+- 对 `/v1/v1/responses` 这类客户端重复拼接 `/v1` 的兜底路由，未带 API key 的验证请求应返回 `401 API_KEY_REQUIRED`，而不是 `404 page not found`。这说明请求已经进入 API 鉴权链路。
+- 可同时验证本地和公网路径：
+
+```bash
+curl -sS -o /tmp/body.txt -w '%{http_code}\n' \
+  -X POST http://127.0.0.1:18080/v1/v1/responses \
+  -H 'Content-Type: application/json' \
+  --data '{}'
+
+curl -sS -o /tmp/body.txt -w '%{http_code}\n' \
+  -X POST https://codex.260213.xyz/v1/v1/responses \
+  -H 'Content-Type: application/json' \
+  --data '{}'
+```
