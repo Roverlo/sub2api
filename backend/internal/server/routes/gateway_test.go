@@ -47,6 +47,8 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 
 	for _, path := range []string{
 		"/v1/responses/compact",
+		"/v1/v1/responses",
+		"/v1/v1/responses/compact",
 		"/responses/compact",
 		"/backend-api/codex/responses",
 		"/backend-api/codex/responses/compact",

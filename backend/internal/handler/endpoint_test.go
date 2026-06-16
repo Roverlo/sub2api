@@ -26,6 +26,7 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		{"/v1/chat/completions", EndpointChatCompletions},
 		{"/v1/embeddings", EndpointEmbeddings},
 		{"/v1/responses", EndpointResponses},
+		{"/v1/v1/responses", EndpointResponses},
 		{"/v1/images/generations", EndpointImagesGenerations},
 		{"/v1/images/edits", EndpointImagesEdits},
 		{"/v1beta/models", EndpointGeminiModels},
@@ -106,8 +107,10 @@ func TestResponsesSubpathSuffix(t *testing.T) {
 		want string
 	}{
 		{"/v1/responses", ""},
+		{"/v1/v1/responses", ""},
 		{"/v1/responses/", ""},
 		{"/v1/responses/compact", "/compact"},
+		{"/v1/v1/responses/compact", "/compact"},
 		{"/openai/v1/responses/compact/detail", "/compact/detail"},
 		{"/v1/messages", ""},
 		{"", ""},
