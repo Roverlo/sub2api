@@ -441,31 +441,35 @@ func TestSettingHandler_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(
 }
 
 func TestSettingHandler_UpdateSettings_RejectsInvalidGatewayFallbackSelectionMode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	repo := &settingHandlerRepoStub{
-		values: map[string]string{
-			service.SettingKeyPromoCodeEnabled: "true",
-		},
+	for _, mode := range []string{"bad-mode", ""} {
+		t.Run(mode, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			repo := &settingHandlerRepoStub{
+				values: map[string]string{
+					service.SettingKeyPromoCodeEnabled: "true",
+				},
+			}
+			svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+			handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+			body := map[string]any{
+				"promo_code_enabled":              true,
+				"gateway_fallback_selection_mode": mode,
+			}
+			rawBody, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			handler.UpdateSettings(c)
+
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.NotContains(t, repo.values, service.SettingKeyGatewayFallbackSelectionMode)
+		})
 	}
-	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
-	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
-
-	body := map[string]any{
-		"promo_code_enabled":              true,
-		"gateway_fallback_selection_mode": "bad-mode",
-	}
-	rawBody, err := json.Marshal(body)
-	require.NoError(t, err)
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	handler.UpdateSettings(c)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.NotContains(t, repo.values, service.SettingKeyGatewayFallbackSelectionMode)
 }
 
 func TestSettingHandler_UpdateSettings_DoesNotPersistPartialSystemSettingsWhenAuthSourceDefaultsFail(t *testing.T) {

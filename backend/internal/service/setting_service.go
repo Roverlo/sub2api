@@ -2267,18 +2267,24 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 }
 
 func normalizeGatewayFallbackSelectionMode(mode string, fallback string) string {
-	normalized := normalizeFallbackSelectionMode(mode)
-	if strings.TrimSpace(mode) == "" || normalized == SchedulerFallbackSelectionLastUsed {
-		if strings.TrimSpace(mode) != "" && strings.EqualFold(strings.TrimSpace(mode), SchedulerFallbackSelectionLastUsed) {
-			return SchedulerFallbackSelectionLastUsed
-		}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "":
 		fallbackNormalized := normalizeFallbackSelectionMode(fallback)
 		if fallbackNormalized != "" {
 			return fallbackNormalized
 		}
 		return SchedulerFallbackSelectionLastUsed
+	case SchedulerFallbackSelectionLastUsed:
+		return SchedulerFallbackSelectionLastUsed
+	case SchedulerFallbackSelectionRandom:
+		return SchedulerFallbackSelectionRandom
+	case SchedulerFallbackSelectionRoundRobin, "round-robin", "roundrobin", "rr":
+		return SchedulerFallbackSelectionRoundRobin
+	case SchedulerFallbackSelectionQuotaBalanced, "quota-balanced", "quota_balance", "quotabalanced", "quota":
+		return SchedulerFallbackSelectionQuotaBalanced
+	default:
+		return normalizeFallbackSelectionMode(fallback)
 	}
-	return normalized
 }
 
 // GetGatewayFallbackSelectionMode returns DB-backed fallback account selection mode.

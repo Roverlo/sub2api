@@ -290,6 +290,14 @@ func TestSettingService_GetGatewayFallbackSelectionMode(t *testing.T) {
 		require.Equal(t, SchedulerFallbackSelectionQuotaBalanced, svc.GetGatewayFallbackSelectionMode(context.Background(), SchedulerFallbackSelectionLastUsed))
 	})
 
+	t.Run("last_used 是显式设置", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{
+			SettingKeyGatewayFallbackSelectionMode: SchedulerFallbackSelectionLastUsed,
+		}}, &config.Config{})
+
+		require.Equal(t, SchedulerFallbackSelectionLastUsed, svc.GetGatewayFallbackSelectionMode(context.Background(), SchedulerFallbackSelectionQuotaBalanced))
+	})
+
 	t.Run("缺失回退配置值", func(t *testing.T) {
 		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{}}, &config.Config{})
 

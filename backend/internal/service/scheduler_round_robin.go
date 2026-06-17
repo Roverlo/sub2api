@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	mathrand "math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -150,6 +151,29 @@ func rotateAccountCandidatesByOffset(items []openAIAccountCandidateScore, offset
 	return out
 }
 
+func shuffleAccountCandidatesWithinPriority(items []openAIAccountCandidateScore) []openAIAccountCandidateScore {
+	ordered := append([]openAIAccountCandidateScore(nil), items...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].account.Priority != ordered[j].account.Priority {
+			return ordered[i].account.Priority < ordered[j].account.Priority
+		}
+		return false
+	})
+	for start := 0; start < len(ordered); {
+		end := start + 1
+		for end < len(ordered) && ordered[end].account.Priority == ordered[start].account.Priority {
+			end++
+		}
+		if end-start > 1 {
+			mathrand.Shuffle(end-start, func(i, j int) {
+				ordered[start+i], ordered[start+j] = ordered[start+j], ordered[start+i]
+			})
+		}
+		start = end
+	}
+	return ordered
+}
+
 func rotateAccountsByOffset(items []*Account, offset int) []*Account {
 	if len(items) <= 1 {
 		return append([]*Account(nil), items...)
@@ -162,6 +186,26 @@ func rotateAccountsByOffset(items []*Account, offset int) []*Account {
 	out = append(out, items[offset:]...)
 	out = append(out, items[:offset]...)
 	return out
+}
+
+func shuffleAccountsWithinPriority(accounts []*Account, preferOAuth bool) []*Account {
+	ordered := append([]*Account(nil), accounts...)
+	sortAccountsByPriorityOnly(ordered, preferOAuth)
+	for start := 0; start < len(ordered); {
+		end := start + 1
+		for end < len(ordered) &&
+			ordered[end].Priority == ordered[start].Priority &&
+			(!preferOAuth || ordered[end].Type == ordered[start].Type) {
+			end++
+		}
+		if end-start > 1 {
+			mathrand.Shuffle(end-start, func(i, j int) {
+				ordered[start+i], ordered[start+j] = ordered[start+j], ordered[start+i]
+			})
+		}
+		start = end
+	}
+	return ordered
 }
 
 func sortAccountLoadByPriorityLoadAndID(items []accountWithLoad, preferOAuth bool) {
@@ -366,6 +410,27 @@ func rotateQuotaBalancedAccountLoadsByOffset(items []quotaBalancedAccountWithLoa
 	return out
 }
 
+func shuffleAccountLoadsWithinPriorityLoad(items []accountWithLoad, preferOAuth bool) []accountWithLoad {
+	ordered := append([]accountWithLoad(nil), items...)
+	sortAccountLoadByPriorityLoadAndID(ordered, preferOAuth)
+	for start := 0; start < len(ordered); {
+		end := start + 1
+		for end < len(ordered) &&
+			ordered[end].account.Priority == ordered[start].account.Priority &&
+			ordered[end].loadInfo.LoadRate == ordered[start].loadInfo.LoadRate &&
+			(!preferOAuth || ordered[end].account.Type == ordered[start].account.Type) {
+			end++
+		}
+		if end-start > 1 {
+			mathrand.Shuffle(end-start, func(i, j int) {
+				ordered[start+i], ordered[start+j] = ordered[start+j], ordered[start+i]
+			})
+		}
+		start = end
+	}
+	return ordered
+}
+
 func buildQuotaBalancedAccountOrder(ctx context.Context, counter roundRobinCounter, accounts []*Account, preferOAuth bool, key string) []*Account {
 	if len(accounts) == 0 {
 		return nil
@@ -514,6 +579,34 @@ func buildRoundRobinOpenAIAccountOrder(ctx context.Context, counter roundRobinCo
 	return out
 }
 
+func buildRandomOpenAIAccountOrder(accounts []*Account, requireCompact bool, includeUnsupported bool) []*Account {
+	if !requireCompact {
+		return shuffleAccountsWithinPriority(accounts, false)
+	}
+	supported := make([]*Account, 0, len(accounts))
+	unknown := make([]*Account, 0, len(accounts))
+	unsupported := make([]*Account, 0, len(accounts))
+	for _, account := range accounts {
+		switch openAICompactSupportTier(account) {
+		case 2:
+			supported = append(supported, account)
+		case 1:
+			unknown = append(unknown, account)
+		default:
+			if includeUnsupported {
+				unsupported = append(unsupported, account)
+			}
+		}
+	}
+	out := make([]*Account, 0, len(accounts))
+	out = append(out, shuffleAccountsWithinPriority(supported, false)...)
+	out = append(out, shuffleAccountsWithinPriority(unknown, false)...)
+	if includeUnsupported {
+		out = append(out, shuffleAccountsWithinPriority(unsupported, false)...)
+	}
+	return out
+}
+
 func buildRoundRobinOpenAIAccountLoadOrder(ctx context.Context, counter roundRobinCounter, items []accountWithLoad, key string, requireCompact bool, includeUnsupported bool) []accountWithLoad {
 	if !requireCompact {
 		return buildRoundRobinAccountLoadOrder(ctx, counter, items, false, key)
@@ -538,6 +631,34 @@ func buildRoundRobinOpenAIAccountLoadOrder(ctx context.Context, counter roundRob
 	out = append(out, buildRoundRobinAccountLoadOrder(ctx, counter, unknown, false, key+":compact_unknown")...)
 	if includeUnsupported {
 		out = append(out, buildRoundRobinAccountLoadOrder(ctx, counter, unsupported, false, key+":compact_unsupported")...)
+	}
+	return out
+}
+
+func buildRandomOpenAIAccountLoadOrder(items []accountWithLoad, requireCompact bool, includeUnsupported bool) []accountWithLoad {
+	if !requireCompact {
+		return shuffleAccountLoadsWithinPriorityLoad(items, false)
+	}
+	supported := make([]accountWithLoad, 0, len(items))
+	unknown := make([]accountWithLoad, 0, len(items))
+	unsupported := make([]accountWithLoad, 0, len(items))
+	for _, item := range items {
+		switch openAICompactSupportTier(item.account) {
+		case 2:
+			supported = append(supported, item)
+		case 1:
+			unknown = append(unknown, item)
+		default:
+			if includeUnsupported {
+				unsupported = append(unsupported, item)
+			}
+		}
+	}
+	out := make([]accountWithLoad, 0, len(items))
+	out = append(out, shuffleAccountLoadsWithinPriorityLoad(supported, false)...)
+	out = append(out, shuffleAccountLoadsWithinPriorityLoad(unknown, false)...)
+	if includeUnsupported {
+		out = append(out, shuffleAccountLoadsWithinPriorityLoad(unsupported, false)...)
 	}
 	return out
 }

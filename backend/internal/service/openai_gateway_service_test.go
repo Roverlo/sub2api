@@ -528,6 +528,81 @@ func TestOpenAISelectAccountWithLoadAwareness_RoundRobinSelectionMode(t *testing
 	require.Equal(t, []int64{9101, 9102, 9101, 9102}, selected)
 }
 
+func TestOpenAISelectAccountWithLoadAwareness_RandomSelectionMode(t *testing.T) {
+	groupID := int64(103)
+	accounts := []Account{
+		{
+			ID:          9151,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+		},
+		{
+			ID:          9152,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+		},
+		{
+			ID:          9153,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+		},
+		{
+			ID:          9154,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    0,
+		},
+		{
+			ID:          9155,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 3,
+			Priority:    1,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionRandom
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selected := map[int64]struct{}{}
+	for i := 0; i < 40; i++ {
+		selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-5.2", nil)
+		require.NoError(t, err)
+		require.NotNil(t, selection)
+		require.NotNil(t, selection.Account)
+		require.LessOrEqual(t, selection.Account.Priority, 0)
+		selected[selection.Account.ID] = struct{}{}
+		if selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+	}
+
+	require.GreaterOrEqual(t, len(selected), 2)
+	require.NotContains(t, selected, int64(9155))
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_QuotaBalancedSelectionMode(t *testing.T) {
 	resetLocalRoundRobinCountersForTest()
 	groupID := int64(102)

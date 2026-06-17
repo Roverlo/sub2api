@@ -1458,7 +1458,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.GatewayFallbackSelectionMode != nil {
 		normalized := strings.TrimSpace(*req.GatewayFallbackSelectionMode)
 		switch normalized {
-		case "", service.SchedulerFallbackSelectionLastUsed, service.SchedulerFallbackSelectionRandom, service.SchedulerFallbackSelectionRoundRobin, service.SchedulerFallbackSelectionQuotaBalanced:
+		case service.SchedulerFallbackSelectionLastUsed, service.SchedulerFallbackSelectionRandom, service.SchedulerFallbackSelectionRoundRobin, service.SchedulerFallbackSelectionQuotaBalanced:
 			req.GatewayFallbackSelectionMode = &normalized
 		default:
 			response.Error(c, http.StatusBadRequest, "gateway_fallback_selection_mode must be one of: last_used/random/round_robin/quota_balanced")

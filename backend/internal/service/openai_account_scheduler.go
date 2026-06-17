@@ -803,6 +803,9 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 			key := accountRoundRobinKey("openai_advanced_"+keySuffix, req.GroupID, PlatformOpenAI, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 			return rotateAccountCandidatesByOffset(ranked, nextRoundRobinOffset(ctx, s.service, key, len(ranked)))
 		}
+		if normalizeFallbackSelectionMode(cfg.FallbackSelectionMode) == SchedulerFallbackSelectionRandom {
+			return shuffleAccountCandidatesWithinPriority(ranked)
+		}
 		return buildOpenAIWeightedSelectionOrder(ranked, req)
 	}
 
