@@ -257,6 +257,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AntigravityUserAgentVersion:            settings.AntigravityUserAgentVersion,
 		OpenAICodexUserAgent:                   settings.OpenAICodexUserAgent,
 		OpenAIAllowClaudeCodeCodexPlugin:       settings.OpenAIAllowClaudeCodeCodexPlugin,
+		GatewayFallbackSelectionMode:           settings.GatewayFallbackSelectionMode,
 		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
 		PaymentVisibleMethodAlipaySource:       settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        settings.PaymentVisibleMethodWxpaySource,
@@ -588,6 +589,7 @@ type UpdateSettingsRequest struct {
 	AntigravityUserAgentVersion        *string `json:"antigravity_user_agent_version"`
 	OpenAICodexUserAgent               *string `json:"openai_codex_user_agent"`
 	OpenAIAllowClaudeCodeCodexPlugin   *bool   `json:"openai_allow_claude_code_codex_plugin"`
+	GatewayFallbackSelectionMode       *string `json:"gateway_fallback_selection_mode"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -1453,6 +1455,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.GatewayFallbackSelectionMode != nil {
+		normalized := strings.TrimSpace(*req.GatewayFallbackSelectionMode)
+		switch normalized {
+		case "", service.SchedulerFallbackSelectionLastUsed, service.SchedulerFallbackSelectionRandom, service.SchedulerFallbackSelectionRoundRobin, service.SchedulerFallbackSelectionQuotaBalanced:
+			req.GatewayFallbackSelectionMode = &normalized
+		default:
+			response.Error(c, http.StatusBadRequest, "gateway_fallback_selection_mode must be one of: last_used/random/round_robin/quota_balanced")
+			return
+		}
+	}
 
 	// 交叉验证：如果同时设置了最低和最高版本号，最高版本号必须 >= 最低版本号
 	if req.MinClaudeCodeVersion != "" && req.MaxClaudeCodeVersion != "" {
@@ -1672,6 +1684,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.OpenAIAllowClaudeCodeCodexPlugin
 			}
 			return previousSettings.OpenAIAllowClaudeCodeCodexPlugin
+		}(),
+		GatewayFallbackSelectionMode: func() string {
+			if req.GatewayFallbackSelectionMode != nil {
+				return *req.GatewayFallbackSelectionMode
+			}
+			return previousSettings.GatewayFallbackSelectionMode
 		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
@@ -2050,6 +2068,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AntigravityUserAgentVersion:            updatedSettings.AntigravityUserAgentVersion,
 		OpenAICodexUserAgent:                   updatedSettings.OpenAICodexUserAgent,
 		OpenAIAllowClaudeCodeCodexPlugin:       updatedSettings.OpenAIAllowClaudeCodeCodexPlugin,
+		GatewayFallbackSelectionMode:           updatedSettings.GatewayFallbackSelectionMode,
 		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
@@ -2522,6 +2541,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIAllowClaudeCodeCodexPlugin != after.OpenAIAllowClaudeCodeCodexPlugin {
 		changed = append(changed, "openai_allow_claude_code_codex_plugin")
+	}
+	if before.GatewayFallbackSelectionMode != after.GatewayFallbackSelectionMode {
+		changed = append(changed, "gateway_fallback_selection_mode")
 	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")

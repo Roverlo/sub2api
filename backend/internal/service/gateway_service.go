@@ -1543,7 +1543,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		"session", shortSessionHash(sessionHash),
 		"excluded_ids", excludedIDsList)
 
-	cfg := s.schedulingConfig()
+	cfg := s.schedulingConfig(ctx)
 
 	// 检查 Claude Code 客户端限制（可能会替换 groupID 为降级分组）
 	group, groupID, err := s.checkClaudeCodeRestriction(ctx, groupID)
@@ -2198,7 +2198,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 }
 
 func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool, platform string, requestedModel string) (*AccountSelectionResult, bool, error) {
-	cfg := s.schedulingConfig()
+	cfg := s.schedulingConfig(ctx)
 	ordered := append([]*Account(nil), candidates...)
 	if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
 		ordered = buildQuotaBalancedAccountOrder(ctx, s, ordered, preferOAuth, accountLoadRoundRobinKey("legacy_acquire_quota", groupID, platform, requestedModel))
@@ -2230,11 +2230,15 @@ func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates
 	return nil, false, nil
 }
 
-func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
+func (s *GatewayService) schedulingConfig(ctx context.Context) config.GatewaySchedulingConfig {
 	if s.cfg != nil {
-		return s.cfg.Gateway.Scheduling
+		cfg := s.cfg.Gateway.Scheduling
+		if s.settingService != nil {
+			cfg.FallbackSelectionMode = s.settingService.GetGatewayFallbackSelectionMode(ctx, cfg.FallbackSelectionMode)
+		}
+		return cfg
 	}
-	return config.GatewaySchedulingConfig{
+	cfg := config.GatewaySchedulingConfig{
 		StickySessionMaxWaiting:  3,
 		StickySessionWaitTimeout: 45 * time.Second,
 		FallbackWaitTimeout:      30 * time.Second,
@@ -2243,6 +2247,10 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
 	}
+	if s.settingService != nil {
+		cfg.FallbackSelectionMode = s.settingService.GetGatewayFallbackSelectionMode(ctx, cfg.FallbackSelectionMode)
+	}
+	return cfg
 }
 
 func (s *GatewayService) withGroupContext(ctx context.Context, group *Group) context.Context {

@@ -270,6 +270,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 		PaymentVisibleMethodAlipayEnabled: true,
 		PaymentVisibleMethodWxpayEnabled:  false,
 		OpenAIAdvancedSchedulerEnabled:    true,
+		GatewayFallbackSelectionMode:      SchedulerFallbackSelectionQuotaBalanced,
 	})
 	require.NoError(t, err)
 	require.Equal(t, VisibleMethodSourceOfficialAlipay, repo.updates[SettingPaymentVisibleMethodAlipaySource])
@@ -277,6 +278,31 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "true", repo.updates[SettingPaymentVisibleMethodAlipayEnabled])
 	require.Equal(t, "false", repo.updates[SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
+	require.Equal(t, SchedulerFallbackSelectionQuotaBalanced, repo.updates[SettingKeyGatewayFallbackSelectionMode])
+}
+
+func TestSettingService_GetGatewayFallbackSelectionMode(t *testing.T) {
+	t.Run("后台设置优先", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{
+			SettingKeyGatewayFallbackSelectionMode: SchedulerFallbackSelectionQuotaBalanced,
+		}}, &config.Config{})
+
+		require.Equal(t, SchedulerFallbackSelectionQuotaBalanced, svc.GetGatewayFallbackSelectionMode(context.Background(), SchedulerFallbackSelectionLastUsed))
+	})
+
+	t.Run("缺失回退配置值", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{}}, &config.Config{})
+
+		require.Equal(t, SchedulerFallbackSelectionRoundRobin, svc.GetGatewayFallbackSelectionMode(context.Background(), SchedulerFallbackSelectionRoundRobin))
+	})
+
+	t.Run("异常值回退配置值", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{
+			SettingKeyGatewayFallbackSelectionMode: "bad-mode",
+		}}, &config.Config{})
+
+		require.Equal(t, SchedulerFallbackSelectionQuotaBalanced, svc.GetGatewayFallbackSelectionMode(context.Background(), SchedulerFallbackSelectionQuotaBalanced))
+	})
 }
 
 func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T) {

@@ -4320,7 +4320,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		}, nil
 	}
 
-	cfg := s.schedulingConfig()
+	cfg := s.schedulingConfig(ctx)
 	if s.concurrencyService != nil {
 		return &AccountSelectionResult{
 			Account: account,

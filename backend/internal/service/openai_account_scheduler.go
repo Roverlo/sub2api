@@ -400,7 +400,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		}, false, nil
 	}
 
-	cfg := s.service.schedulingConfig()
+	cfg := s.service.schedulingConfig(ctx)
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	if s.service.concurrencyService != nil {
 		if escapeCfg.enabled && acquireErr == nil && result != nil && !result.Acquired {
@@ -794,11 +794,12 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 			groupTopK = len(pool)
 		}
 		ranked := selectTopKOpenAICandidates(pool, groupTopK)
-		if isQuotaBalancedSelectionMode(s.service.schedulingConfig().FallbackSelectionMode) {
+		cfg := s.service.schedulingConfig(ctx)
+		if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
 			key := accountRoundRobinKey("openai_advanced_quota_"+keySuffix, req.GroupID, PlatformOpenAI, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 			return buildQuotaBalancedOpenAICandidateOrder(ctx, s.service, ranked, key)
 		}
-		if isRoundRobinSelectionMode(s.service.schedulingConfig().FallbackSelectionMode) {
+		if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 			key := accountRoundRobinKey("openai_advanced_"+keySuffix, req.GroupID, PlatformOpenAI, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 			return rotateAccountCandidatesByOffset(ranked, nextRoundRobinOffset(ctx, s.service, key, len(ranked)))
 		}
@@ -1002,7 +1003,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 	}
 
-	cfg := s.service.schedulingConfig()
+	cfg := s.service.schedulingConfig(ctx)
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	for _, candidate := range selectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel, false, req.RequiredCapability)

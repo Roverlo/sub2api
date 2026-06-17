@@ -5700,7 +5700,13 @@ export default {
         title: 'Gateway Scheduling Settings',
         description: 'Control API Key scheduling behavior',
         allowUngroupedKey: 'Allow Ungrouped Key Scheduling',
-        allowUngroupedKeyHint: 'When disabled, API Keys not assigned to any group cannot make requests (403 Forbidden). Keep disabled to ensure all Keys belong to a specific group.'
+        allowUngroupedKeyHint: 'When disabled, API Keys not assigned to any group cannot make requests (403 Forbidden). Keep disabled to ensure all Keys belong to a specific group.',
+        fallbackSelectionMode: 'Fallback account selection',
+        fallbackSelectionModeHint: 'Controls how fallback candidates are ordered when sticky routing is unavailable or accounts are full. Quota-balanced prioritizes accounts with lower Codex 7-day/5-hour usage.',
+        fallbackSelectionLastUsed: 'Least recently used',
+        fallbackSelectionRandom: 'Random',
+        fallbackSelectionRoundRobin: 'Round-robin',
+        fallbackSelectionQuotaBalanced: 'Quota-balanced'
       },
       gatewayForwarding: {
         title: 'Request Forwarding',

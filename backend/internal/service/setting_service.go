@@ -153,9 +153,17 @@ type cachedOpenAIAllowCodexPlugin struct {
 	expiresAt int64 // unix nano
 }
 
+type cachedGatewayFallbackSelectionMode struct {
+	value     string
+	expiresAt int64 // unix nano
+}
+
 const openAIAllowCodexPluginCacheTTL = 60 * time.Second
 const openAIAllowCodexPluginErrorTTL = 5 * time.Second
 const openAIAllowCodexPluginDBTimeout = 5 * time.Second
+const gatewayFallbackSelectionModeCacheTTL = 60 * time.Second
+const gatewayFallbackSelectionModeErrorTTL = 5 * time.Second
+const gatewayFallbackSelectionModeDBTimeout = 5 * time.Second
 
 const openAIQuotaAutoPauseSettingsCacheTTL = 60 * time.Second
 const openAIQuotaAutoPauseSettingsErrorTTL = 5 * time.Second
@@ -187,6 +195,8 @@ type SettingService struct {
 	openAICodexUASF             singleflight.Group
 	openAIAllowCodexPluginCache atomic.Value // *cachedOpenAIAllowCodexPlugin
 	openAIAllowCodexPluginSF    singleflight.Group
+	gatewayFallbackModeCache    atomic.Value // *cachedGatewayFallbackSelectionMode
+	gatewayFallbackModeSF       singleflight.Group
 
 	// openAIQuotaAutoPauseSettingsCache holds the most recently observed quota auto-pause
 	// settings. GetOpenAIQuotaAutoPauseSettings reads this atomic.Value on the request hot
@@ -1914,6 +1924,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAntigravityUserAgentVersion] = antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
 	updates[SettingKeyOpenAICodexUserAgent] = strings.TrimSpace(settings.OpenAICodexUserAgent)
 	updates[SettingKeyOpenAIAllowClaudeCodeCodexPlugin] = strconv.FormatBool(settings.OpenAIAllowClaudeCodeCodexPlugin)
+	updates[SettingKeyGatewayFallbackSelectionMode] = normalizeGatewayFallbackSelectionMode(settings.GatewayFallbackSelectionMode, s.configGatewayFallbackSelectionMode())
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
 	updates[SettingPaymentVisibleMethodWxpaySource] = settings.PaymentVisibleMethodWxpaySource
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
@@ -2060,6 +2071,11 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		value:     codexUA,
 		expiresAt: time.Now().Add(openAICodexUserAgentCacheTTL).UnixNano(),
 	})
+	s.gatewayFallbackModeSF.Forget("gateway_fallback_selection_mode")
+	s.gatewayFallbackModeCache.Store(&cachedGatewayFallbackSelectionMode{
+		value:     normalizeGatewayFallbackSelectionMode(settings.GatewayFallbackSelectionMode, s.configGatewayFallbackSelectionMode()),
+		expiresAt: time.Now().Add(gatewayFallbackSelectionModeCacheTTL).UnixNano(),
+	})
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
 		enabled:   settings.OpenAIAdvancedSchedulerEnabled,
@@ -2091,6 +2107,13 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 
 func (s *SettingService) defaultRewriteMessageCacheControl() bool {
 	return false
+}
+
+func (s *SettingService) configGatewayFallbackSelectionMode() string {
+	if s != nil && s.cfg != nil {
+		return s.cfg.Gateway.Scheduling.FallbackSelectionMode
+	}
+	return SchedulerFallbackSelectionLastUsed
 }
 
 func (s *SettingService) validateDefaultSubscriptionGroups(ctx context.Context, items []DefaultSubscriptionSetting) error {
@@ -2241,6 +2264,68 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 		return val
 	}
 	return false
+}
+
+func normalizeGatewayFallbackSelectionMode(mode string, fallback string) string {
+	normalized := normalizeFallbackSelectionMode(mode)
+	if strings.TrimSpace(mode) == "" || normalized == SchedulerFallbackSelectionLastUsed {
+		if strings.TrimSpace(mode) != "" && strings.EqualFold(strings.TrimSpace(mode), SchedulerFallbackSelectionLastUsed) {
+			return SchedulerFallbackSelectionLastUsed
+		}
+		fallbackNormalized := normalizeFallbackSelectionMode(fallback)
+		if fallbackNormalized != "" {
+			return fallbackNormalized
+		}
+		return SchedulerFallbackSelectionLastUsed
+	}
+	return normalized
+}
+
+// GetGatewayFallbackSelectionMode returns DB-backed fallback account selection mode.
+// Empty/missing DB value falls back to config.yaml/env. The result is cached for the
+// request hot path.
+func (s *SettingService) GetGatewayFallbackSelectionMode(ctx context.Context, fallback string) string {
+	fallbackMode := normalizeGatewayFallbackSelectionMode(fallback, SchedulerFallbackSelectionLastUsed)
+	if s == nil || s.settingRepo == nil {
+		return fallbackMode
+	}
+	if cached, ok := s.gatewayFallbackModeCache.Load().(*cachedGatewayFallbackSelectionMode); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return normalizeGatewayFallbackSelectionMode(cached.value, fallbackMode)
+		}
+	}
+
+	result, _, _ := s.gatewayFallbackModeSF.Do("gateway_fallback_selection_mode", func() (any, error) {
+		if cached, ok := s.gatewayFallbackModeCache.Load().(*cachedGatewayFallbackSelectionMode); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return cached.value, nil
+			}
+		}
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayFallbackSelectionModeDBTimeout)
+		defer cancel()
+		value, err := s.settingRepo.GetValue(dbCtx, SettingKeyGatewayFallbackSelectionMode)
+		if err != nil && !errors.Is(err, ErrSettingNotFound) {
+			slog.Warn("failed to get gateway fallback selection mode setting", "error", err)
+			s.gatewayFallbackModeCache.Store(&cachedGatewayFallbackSelectionMode{
+				value:     fallbackMode,
+				expiresAt: time.Now().Add(gatewayFallbackSelectionModeErrorTTL).UnixNano(),
+			})
+			return fallbackMode, nil
+		}
+		mode := normalizeGatewayFallbackSelectionMode(value, fallbackMode)
+		s.gatewayFallbackModeCache.Store(&cachedGatewayFallbackSelectionMode{
+			value:     mode,
+			expiresAt: time.Now().Add(gatewayFallbackSelectionModeCacheTTL).UnixNano(),
+		})
+		return mode, nil
+	})
+	if mode, ok := result.(string); ok && mode != "" {
+		return normalizeGatewayFallbackSelectionMode(mode, fallbackMode)
+	}
+	return fallbackMode
 }
 
 type gatewayForwardingSettingsResult struct {
@@ -2829,6 +2914,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRewriteMessageCacheControl:         strconv.FormatBool(s.defaultRewriteMessageCacheControl()),
 		SettingKeyAntigravityUserAgentVersion:        "",
 		SettingKeyOpenAICodexUserAgent:               "",
+		SettingKeyGatewayFallbackSelectionMode:       normalizeGatewayFallbackSelectionMode(s.configGatewayFallbackSelectionMode(), SchedulerFallbackSelectionLastUsed),
 		SettingPaymentVisibleMethodAlipaySource:      "",
 		SettingPaymentVisibleMethodWxpaySource:       "",
 		SettingPaymentVisibleMethodAlipayEnabled:     "false",
@@ -3352,6 +3438,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.AntigravityUserAgentVersion = antigravity.NormalizeUserAgentVersion(settings[SettingKeyAntigravityUserAgentVersion])
 	result.OpenAICodexUserAgent = strings.TrimSpace(settings[SettingKeyOpenAICodexUserAgent])
 	result.OpenAIAllowClaudeCodeCodexPlugin = settings[SettingKeyOpenAIAllowClaudeCodeCodexPlugin] == "true"
+	result.GatewayFallbackSelectionMode = normalizeGatewayFallbackSelectionMode(settings[SettingKeyGatewayFallbackSelectionMode], s.configGatewayFallbackSelectionMode())
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {

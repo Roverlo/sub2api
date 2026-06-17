@@ -1736,10 +1736,11 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 // least one candidate was filtered out solely because it lacks compact support
 // (only meaningful when requireCompact=true).
 func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability) (*Account, bool) {
-	if isRoundRobinSelectionMode(s.schedulingConfig().FallbackSelectionMode) {
+	cfg := s.schedulingConfig(ctx)
+	if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 		return s.selectBestAccountRoundRobin(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability)
 	}
-	if isQuotaBalancedSelectionMode(s.schedulingConfig().FallbackSelectionMode) {
+	if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
 		return s.selectBestAccountQuotaBalanced(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability)
 	}
 
@@ -1927,7 +1928,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		return nil, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
 	}
 
-	cfg := s.schedulingConfig()
+	cfg := s.schedulingConfig(ctx)
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	var stickyAccountID int64
 	if sessionHash != "" && s.cache != nil {
@@ -2392,11 +2393,15 @@ func (s *OpenAIGatewayService) newAcquiredSelectionResult(ctx context.Context, a
 	return selection, err
 }
 
-func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig {
+func (s *OpenAIGatewayService) schedulingConfig(ctx context.Context) config.GatewaySchedulingConfig {
 	if s.cfg != nil {
-		return s.cfg.Gateway.Scheduling
+		cfg := s.cfg.Gateway.Scheduling
+		if s.settingService != nil {
+			cfg.FallbackSelectionMode = s.settingService.GetGatewayFallbackSelectionMode(ctx, cfg.FallbackSelectionMode)
+		}
+		return cfg
 	}
-	return config.GatewaySchedulingConfig{
+	cfg := config.GatewaySchedulingConfig{
 		StickySessionMaxWaiting:  3,
 		StickySessionWaitTimeout: 45 * time.Second,
 		FallbackWaitTimeout:      30 * time.Second,
@@ -2405,6 +2410,10 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
 	}
+	if s.settingService != nil {
+		cfg.FallbackSelectionMode = s.settingService.GetGatewayFallbackSelectionMode(ctx, cfg.FallbackSelectionMode)
+	}
+	return cfg
 }
 
 // GetAccessToken gets the access token for an OpenAI account

@@ -19,6 +19,7 @@ export interface DefaultSubscriptionSetting {
 // ── 平台限额类型 ──────────────────────────────────────────────────
 export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
+export type GatewayFallbackSelectionMode = "last_used" | "random" | "round_robin" | "quota_balanced"
 
 /** 单平台三档限额；null = 不限制，undefined = 未填（等价 null） */
 export interface PlatformQuotaLimits {
@@ -561,6 +562,7 @@ export interface SystemSettings {
   antigravity_user_agent_version: string;
   openai_codex_user_agent: string;
   openai_allow_claude_code_codex_plugin: boolean;
+  gateway_fallback_selection_mode: GatewayFallbackSelectionMode | string;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -797,6 +799,7 @@ export interface UpdateSettingsRequest {
   antigravity_user_agent_version?: string;
   openai_codex_user_agent?: string;
   openai_allow_claude_code_codex_plugin?: boolean;
+  gateway_fallback_selection_mode?: GatewayFallbackSelectionMode | string;
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;

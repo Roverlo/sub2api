@@ -223,6 +223,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		"payment_visible_method_alipay_enabled": true,
 		"payment_visible_method_wxpay_enabled":  false,
 		"openai_advanced_scheduler_enabled":     true,
+		"gateway_fallback_selection_mode":       "quota_balanced",
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -240,6 +241,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values[service.SettingPaymentVisibleMethodAlipayEnabled])
 	require.Equal(t, "false", repo.values[service.SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.values["openai_advanced_scheduler_enabled"])
+	require.Equal(t, service.SchedulerFallbackSelectionQuotaBalanced, repo.values[service.SettingKeyGatewayFallbackSelectionMode])
 
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -250,6 +252,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["payment_visible_method_alipay_enabled"])
 	require.Equal(t, false, data["payment_visible_method_wxpay_enabled"])
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
+	require.Equal(t, service.SchedulerFallbackSelectionQuotaBalanced, data["gateway_fallback_selection_mode"])
 }
 
 func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodSource(t *testing.T) {
@@ -435,6 +438,34 @@ func TestSettingHandler_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.NotContains(t, repo.values, service.SettingPaymentVisibleMethodAlipaySource)
+}
+
+func TestSettingHandler_UpdateSettings_RejectsInvalidGatewayFallbackSelectionMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled: "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled":              true,
+		"gateway_fallback_selection_mode": "bad-mode",
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.NotContains(t, repo.values, service.SettingKeyGatewayFallbackSelectionMode)
 }
 
 func TestSettingHandler_UpdateSettings_DoesNotPersistPartialSystemSettingsWhenAuthSourceDefaultsFail(t *testing.T) {

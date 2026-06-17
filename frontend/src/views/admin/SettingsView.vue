@@ -3766,6 +3766,22 @@
                 </div>
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
               </div>
+
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.scheduling.fallbackSelectionMode") }}
+                </label>
+                <Select
+                  v-model="form.gateway_fallback_selection_mode"
+                  :options="gatewayFallbackSelectionOptions"
+                  class="max-w-sm"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.scheduling.fallbackSelectionModeHint") }}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -6718,6 +6734,7 @@ import type {
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
   WebSearchTestResult,
+  GatewayFallbackSelectionMode,
 } from "@/api/admin/settings";
 import type {
   AdminGroup,
@@ -7196,6 +7213,7 @@ const form = reactive<SettingsForm>({
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
+  gateway_fallback_selection_mode: "last_used" as GatewayFallbackSelectionMode,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -7271,6 +7289,25 @@ const authSourceDefaultsMeta = computed(() => [
       "通过钉钉首次注册或首次绑定时应用。",
       "Applied on first signup or first bind through DingTalk.",
     ),
+  },
+]);
+
+const gatewayFallbackSelectionOptions = computed(() => [
+  {
+    value: "last_used",
+    label: t("admin.settings.scheduling.fallbackSelectionLastUsed"),
+  },
+  {
+    value: "random",
+    label: t("admin.settings.scheduling.fallbackSelectionRandom"),
+  },
+  {
+    value: "round_robin",
+    label: t("admin.settings.scheduling.fallbackSelectionRoundRobin"),
+  },
+  {
+    value: "quota_balanced",
+    label: t("admin.settings.scheduling.fallbackSelectionQuotaBalanced"),
   },
 ]);
 
@@ -8313,6 +8350,7 @@ async function saveSettings() {
       openai_codex_user_agent:
         form.openai_codex_user_agent?.trim() || "",
       openai_allow_claude_code_codex_plugin: form.openai_allow_claude_code_codex_plugin,
+      gateway_fallback_selection_mode: form.gateway_fallback_selection_mode,
       // Payment configuration
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,

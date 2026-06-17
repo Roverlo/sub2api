@@ -5852,7 +5852,13 @@ export default {
         title: '网关调度设置',
         description: '控制 API Key 的调度行为',
         allowUngroupedKey: '允许未分组 Key 调度',
-        allowUngroupedKeyHint: '关闭后，未分配到任何分组的 API Key 将无法发起请求（返回 403）。建议保持关闭以确保所有 Key 都归属明确的分组。'
+        allowUngroupedKeyHint: '关闭后，未分配到任何分组的 API Key 将无法发起请求（返回 403）。建议保持关闭以确保所有 Key 都归属明确的分组。',
+        fallbackSelectionMode: '兜底账号选择策略',
+        fallbackSelectionModeHint: '控制粘性会话不可用或账号满载时如何选择候选账号。按额度均衡会优先使用 Codex 7 天/5 小时额度使用率更低的账号。',
+        fallbackSelectionLastUsed: '最久未用',
+        fallbackSelectionRandom: '随机',
+        fallbackSelectionRoundRobin: '轮询',
+        fallbackSelectionQuotaBalanced: '按额度均衡'
       },
       gatewayForwarding: {
         title: '请求转发行为',
