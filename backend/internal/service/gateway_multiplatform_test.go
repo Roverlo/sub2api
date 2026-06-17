@@ -2230,6 +2230,38 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, int64(2), result.Account.ID, "应选择优先级最高的账号")
 	})
 
+	t.Run("无ConcurrencyService-按额度均衡配置选择", func(t *testing.T) {
+		oldUsed := time.Now().Add(-2 * time.Hour)
+		recentUsed := time.Now().Add(-1 * time.Hour)
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &oldUsed, Extra: map[string]any{"quota_used": 90.0, "quota_limit": 100.0}},
+				{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &recentUsed, Extra: map[string]any{"quota_used": 10.0, "quota_limit": 100.0}},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
+		cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionQuotaBalanced
+
+		svc := &GatewayService{
+			accountRepo:        repo,
+			cache:              &mockGatewayCacheForPlatform{},
+			cfg:                cfg,
+			concurrencyService: nil,
+		}
+
+		result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, "", int64(0))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Account)
+		require.Equal(t, int64(2), result.Account.ID, "legacy path should honor quota-balanced scheduling instead of LRU")
+	})
+
 	t.Run("排除账号-不选择被排除的账号", func(t *testing.T) {
 		repo := &mockAccountRepoForPlatform{
 			accounts: []Account{
@@ -2766,6 +2798,66 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, int64(2), cache.sessionBindings["route"])
 	})
 
+	t.Run("模型路由-按额度均衡配置选择", func(t *testing.T) {
+		groupID := int64(26)
+		oldUsed := time.Now().Add(-2 * time.Hour)
+		recentUsed := time.Now().Add(-1 * time.Hour)
+
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &oldUsed, Extra: map[string]any{"quota_used": 90.0, "quota_limit": 100.0}},
+				{ID: 2, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &recentUsed, Extra: map[string]any{"quota_used": 10.0, "quota_limit": 100.0}},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		cache := &mockGatewayCacheForPlatform{}
+
+		groupRepo := &mockGroupRepoForGateway{
+			groups: map[int64]*Group{
+				groupID: {
+					ID:                  groupID,
+					Platform:            PlatformAnthropic,
+					Status:              StatusActive,
+					Hydrated:            true,
+					ModelRoutingEnabled: true,
+					ModelRouting: map[string][]int64{
+						"claude-3-5-sonnet-20241022": {1, 2},
+					},
+				},
+			},
+		}
+
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
+		cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionQuotaBalanced
+
+		concurrencyCache := &mockConcurrencyCache{
+			loadMap: map[int64]*AccountLoadInfo{
+				1: {AccountID: 1, LoadRate: 10},
+				2: {AccountID: 2, LoadRate: 10},
+			},
+		}
+
+		svc := &GatewayService{
+			accountRepo:        repo,
+			groupRepo:          groupRepo,
+			cache:              cache,
+			cfg:                cfg,
+			concurrencyService: NewConcurrencyService(concurrencyCache),
+		}
+
+		result, err := svc.SelectAccountWithLoadAwareness(ctx, &groupID, "route-quota", "claude-3-5-sonnet-20241022", nil, "", int64(0))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Account)
+		require.Equal(t, int64(2), result.Account.ID, "routed load-aware path should honor quota-balanced scheduling instead of LRU")
+		require.Equal(t, int64(2), cache.sessionBindings["route-quota"])
+	})
+
 	t.Run("模型路由-路由账号全满返回等待计划", func(t *testing.T) {
 		groupID := int64(23)
 
@@ -2880,6 +2972,60 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.NotNil(t, result.Account)
 		require.Equal(t, int64(3), result.Account.ID)
 		require.Equal(t, int64(3), cache.sessionBindings["fallback"])
+	})
+
+	t.Run("随机模式-负载感知主路径不固定按LRU", func(t *testing.T) {
+		oldest := time.Now().Add(-3 * time.Hour)
+		middle := time.Now().Add(-2 * time.Hour)
+		recent := time.Now().Add(-1 * time.Hour)
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &oldest},
+				{ID: 2, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &middle},
+				{ID: 3, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, LastUsedAt: &recent},
+				{ID: 4, Platform: PlatformAnthropic, Priority: 2, Status: StatusActive, Schedulable: true, Concurrency: 5},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
+		cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionRandom
+
+		concurrencyCache := &mockConcurrencyCache{
+			loadMap: map[int64]*AccountLoadInfo{
+				1: {AccountID: 1, LoadRate: 10},
+				2: {AccountID: 2, LoadRate: 10},
+				3: {AccountID: 3, LoadRate: 10},
+				4: {AccountID: 4, LoadRate: 0},
+			},
+		}
+
+		svc := &GatewayService{
+			accountRepo:        repo,
+			cache:              &mockGatewayCacheForPlatform{},
+			cfg:                cfg,
+			concurrencyService: NewConcurrencyService(concurrencyCache),
+		}
+
+		selected := map[int64]struct{}{}
+		for i := 0; i < 60; i++ {
+			result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "", "claude-3-5-sonnet-20241022", nil, "", int64(0))
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.NotNil(t, result.Account)
+			require.LessOrEqual(t, result.Account.Priority, 1)
+			selected[result.Account.ID] = struct{}{}
+			if result.ReleaseFunc != nil {
+				result.ReleaseFunc()
+			}
+		}
+
+		require.GreaterOrEqual(t, len(selected), 2)
+		require.NotContains(t, selected, int64(4))
 	})
 
 	t.Run("负载批量失败且无法获取-兜底等待", func(t *testing.T) {
@@ -3209,6 +3355,59 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.NotNil(t, result)
 		require.NotNil(t, result.Account)
 		require.Equal(t, int64(2), result.Account.ID)
+	})
+
+	t.Run("随机模式-等待兜底保留Gemini OAuth优先", func(t *testing.T) {
+		groupID := int64(25)
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformGemini, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, Type: AccountTypeAPIKey},
+				{ID: 2, Platform: PlatformGemini, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5, Type: AccountTypeOAuth},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		groupRepo := &mockGroupRepoForGateway{
+			groups: map[int64]*Group{
+				groupID: {
+					ID:       groupID,
+					Platform: PlatformGemini,
+					Status:   StatusActive,
+					Hydrated: true,
+				},
+			},
+		}
+
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
+		cfg.Gateway.Scheduling.FallbackSelectionMode = SchedulerFallbackSelectionRandom
+
+		concurrencyCache := &mockConcurrencyCache{
+			acquireResults: map[int64]bool{1: false, 2: false},
+			loadMap: map[int64]*AccountLoadInfo{
+				1: {AccountID: 1, LoadRate: 10},
+				2: {AccountID: 2, LoadRate: 10},
+			},
+		}
+
+		svc := &GatewayService{
+			accountRepo:        repo,
+			groupRepo:          groupRepo,
+			cache:              &mockGatewayCacheForPlatform{},
+			cfg:                cfg,
+			concurrencyService: NewConcurrencyService(concurrencyCache),
+		}
+
+		for i := 0; i < 20; i++ {
+			result, err := svc.SelectAccountWithLoadAwareness(ctx, &groupID, "wait-random", "gemini-2.5-pro", nil, "", int64(0))
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.NotNil(t, result.WaitPlan)
+			require.Equal(t, int64(2), result.Account.ID)
+		}
 	})
 }
 

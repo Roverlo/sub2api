@@ -1872,30 +1872,10 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			if len(routingAvailable) > 0 {
-				// 排序：优先级 > 负载率 > 最后使用时间
-				sort.SliceStable(routingAvailable, func(i, j int) bool {
-					a, b := routingAvailable[i], routingAvailable[j]
-					if a.account.Priority != b.account.Priority {
-						return a.account.Priority < b.account.Priority
-					}
-					if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-						return a.loadInfo.LoadRate < b.loadInfo.LoadRate
-					}
-					switch {
-					case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
-						return true
-					case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
-						return false
-					case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
-						return false
-					default:
-						return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
-					}
-				})
-				shuffleWithinSortGroups(routingAvailable)
+				routingSelectionOrder := s.orderGatewayAccountLoads(ctx, routingAvailable, preferOAuth, cfg.FallbackSelectionMode, accountLoadRoundRobinKey("route_load", groupID, platform, requestedModel))
 
 				// 4. 尝试获取槽位
-				for _, item := range routingAvailable {
+				for _, item := range routingSelectionOrder {
 					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, item.account.Concurrency)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
@@ -1915,7 +1895,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 				// 5. 所有路由账号槽位满，尝试返回等待计划（选择负载最低的）
 				// 遍历找到第一个满足会话限制的账号
-				for _, item := range routingAvailable {
+				for _, item := range routingSelectionOrder {
 					if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
 						continue // 会话限制已满，尝试下一个
 					}
@@ -2132,20 +2112,17 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		}
 
 		selectionKey := accountLoadRoundRobinKey("load", groupID, platform, requestedModel)
-		if isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
-			available = buildQuotaBalancedAccountLoadOrder(ctx, s, available, preferOAuth, selectionKey+":quota")
-		} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
-			available = buildRoundRobinAccountLoadOrder(ctx, s, available, preferOAuth, selectionKey)
-		}
+		orderedAvailable := s.orderGatewayAccountLoads(ctx, available, preferOAuth, cfg.FallbackSelectionMode, selectionKey)
+		schedulerOrdered := normalizeFallbackSelectionMode(cfg.FallbackSelectionMode) != SchedulerFallbackSelectionLastUsed
 
 		// 分层过滤选择：优先级 → 负载率 → LRU/轮询/额度均衡
-		for len(available) > 0 {
+		for len(orderedAvailable) > 0 {
 			var selected *accountWithLoad
-			if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) || isQuotaBalancedSelectionMode(cfg.FallbackSelectionMode) {
-				selected = &available[0]
+			if schedulerOrdered {
+				selected = &orderedAvailable[0]
 			} else {
 				// 1. 取优先级最小的集合
-				candidates := filterByMinPriority(available)
+				candidates := filterByMinPriority(orderedAvailable)
 				// 2. 取负载率最低的集合
 				candidates = filterByMinLoadRate(candidates)
 				// 3. LRU 选择最久未用的账号
@@ -2170,13 +2147,13 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 			// 移除已尝试的账号，重新进行分层过滤
 			selectedID := selected.account.ID
-			newAvailable := make([]accountWithLoad, 0, len(available)-1)
-			for _, acc := range available {
+			newAvailable := make([]accountWithLoad, 0, len(orderedAvailable)-1)
+			for _, acc := range orderedAvailable {
 				if acc.account.ID != selectedID {
 					newAvailable = append(newAvailable, acc)
 				}
 			}
-			available = newAvailable
+			orderedAvailable = newAvailable
 		}
 	}
 
@@ -2204,6 +2181,8 @@ func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates
 		ordered = buildQuotaBalancedAccountOrder(ctx, s, ordered, preferOAuth, accountLoadRoundRobinKey("legacy_acquire_quota", groupID, platform, requestedModel))
 	} else if isRoundRobinSelectionMode(cfg.FallbackSelectionMode) {
 		ordered = buildRoundRobinAccountOrder(ctx, s, ordered, preferOAuth, accountLoadRoundRobinKey("legacy_acquire", groupID, platform, requestedModel))
+	} else if normalizeFallbackSelectionMode(cfg.FallbackSelectionMode) == SchedulerFallbackSelectionRandom {
+		ordered = shuffleAccountsWithinPriority(ordered, preferOAuth)
 	} else {
 		sortAccountsByPriorityAndLastUsed(ordered, preferOAuth)
 	}
@@ -2984,7 +2963,36 @@ func selectByLRU(accounts []accountWithLoad, preferOAuth bool) *accountWithLoad 
 	return &accounts[selectedIdx]
 }
 
+func sortAccountLoadByPriorityLoadAndLastUsed(items []accountWithLoad, preferOAuth bool) {
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if a.account.Priority != b.account.Priority {
+			return a.account.Priority < b.account.Priority
+		}
+		if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
+			return a.loadInfo.LoadRate < b.loadInfo.LoadRate
+		}
+		switch {
+		case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
+			return true
+		case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
+			return false
+		case a.account.LastUsedAt != nil && b.account.LastUsedAt != nil && !a.account.LastUsedAt.Equal(*b.account.LastUsedAt):
+			return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
+		}
+		if preferOAuth && a.account.Type != b.account.Type {
+			return a.account.Type == AccountTypeOAuth
+		}
+		return a.account.ID < b.account.ID
+	})
+	shuffleWithinSortGroupsWithPreference(items, preferOAuth)
+}
+
 func sortAccountsByPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
+	sortAccountsByPriorityAndLastUsedWithPreference(accounts, preferOAuth, nil)
+}
+
+func sortAccountsByPriorityAndLastUsedWithPreference(accounts []*Account, preferOAuth bool, preferOAuthForAccount func(*Account) bool) {
 	sort.SliceStable(accounts, func(i, j int) bool {
 		a, b := accounts[i], accounts[j]
 		if a.Priority != b.Priority {
@@ -2996,7 +3004,83 @@ func sortAccountsByPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
 		case a.LastUsedAt != nil && b.LastUsedAt == nil:
 			return false
 		case a.LastUsedAt == nil && b.LastUsedAt == nil:
-			if preferOAuth && a.Type != b.Type {
+			if preferOAuth {
+				aPreferred := accountPrefersOAuth(a, preferOAuth, preferOAuthForAccount)
+				bPreferred := accountPrefersOAuth(b, preferOAuth, preferOAuthForAccount)
+				if aPreferred != bPreferred {
+					return aPreferred
+				}
+			}
+			return false
+		default:
+			return a.LastUsedAt.Before(*b.LastUsedAt)
+		}
+	})
+	shuffleWithinPriorityAndLastUsedWithPreference(accounts, preferOAuth, preferOAuthForAccount)
+}
+
+func (s *GatewayService) orderGatewayAccountCandidates(ctx context.Context, accounts []*Account, preferOAuth bool, mode string, key string) []*Account {
+	return s.orderGatewayAccountCandidatesWithPreference(ctx, accounts, preferOAuth, mode, key, nil)
+}
+
+func (s *GatewayService) orderGatewayMixedAccountCandidates(ctx context.Context, accounts []*Account, preferOAuth bool, mode string, key string) []*Account {
+	if normalizeFallbackSelectionMode(mode) == SchedulerFallbackSelectionLastUsed {
+		ordered := append([]*Account(nil), accounts...)
+		sortMixedGatewayAccountsByPriorityAndLastUsed(ordered, preferOAuth)
+		return ordered
+	}
+	preferOAuthForAccount := func(account *Account) bool {
+		return account != nil && account.Platform == PlatformGemini
+	}
+	return s.orderGatewayAccountCandidatesWithPreference(ctx, accounts, preferOAuth, mode, key, preferOAuthForAccount)
+}
+
+func (s *GatewayService) orderGatewayAccountCandidatesWithPreference(ctx context.Context, accounts []*Account, preferOAuth bool, mode string, key string, preferOAuthForAccount func(*Account) bool) []*Account {
+	ordered := append([]*Account(nil), accounts...)
+	switch normalizeFallbackSelectionMode(mode) {
+	case SchedulerFallbackSelectionRandom:
+		return shuffleAccountsWithinPriorityPreference(ordered, preferOAuth, preferOAuthForAccount)
+	case SchedulerFallbackSelectionRoundRobin:
+		return buildRoundRobinAccountOrderWithPreference(ctx, s, ordered, preferOAuth, key, preferOAuthForAccount)
+	case SchedulerFallbackSelectionQuotaBalanced:
+		return buildQuotaBalancedAccountOrderWithPreference(ctx, s, ordered, preferOAuth, key+":quota", preferOAuthForAccount)
+	default:
+		sortAccountsByPriorityAndLastUsedWithPreference(ordered, preferOAuth, preferOAuthForAccount)
+		return ordered
+	}
+}
+
+func (s *GatewayService) orderGatewayAccountLoads(ctx context.Context, items []accountWithLoad, preferOAuth bool, mode string, key string) []accountWithLoad {
+	ordered := append([]accountWithLoad(nil), items...)
+	switch normalizeFallbackSelectionMode(mode) {
+	case SchedulerFallbackSelectionRandom:
+		return shuffleAccountLoadsWithinPriorityLoad(ordered, preferOAuth)
+	case SchedulerFallbackSelectionRoundRobin:
+		return buildRoundRobinAccountLoadOrder(ctx, s, ordered, preferOAuth, key)
+	case SchedulerFallbackSelectionQuotaBalanced:
+		return buildQuotaBalancedAccountLoadOrder(ctx, s, ordered, preferOAuth, key+":quota")
+	default:
+		sortAccountLoadByPriorityLoadAndLastUsed(ordered, preferOAuth)
+		return ordered
+	}
+}
+
+func sortMixedGatewayAccountsByPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
+	sort.SliceStable(accounts, func(i, j int) bool {
+		a, b := accounts[i], accounts[j]
+		if a.Priority != b.Priority {
+			return a.Priority < b.Priority
+		}
+		switch {
+		case a.LastUsedAt == nil && b.LastUsedAt != nil:
+			return true
+		case a.LastUsedAt != nil && b.LastUsedAt == nil:
+			return false
+		case a.LastUsedAt == nil && b.LastUsedAt == nil:
+			if preferOAuth &&
+				a.Platform == PlatformGemini &&
+				b.Platform == PlatformGemini &&
+				a.Type != b.Type {
 				return a.Type == AccountTypeOAuth
 			}
 			return false
@@ -3004,19 +3088,22 @@ func sortAccountsByPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
 			return a.LastUsedAt.Before(*b.LastUsedAt)
 		}
 	})
-	shuffleWithinPriorityAndLastUsed(accounts, preferOAuth)
 }
 
 // shuffleWithinSortGroups 对排序后的 accountWithLoad 切片，按 (Priority, LoadRate, LastUsedAt) 分组后组内随机打乱。
 // 防止并发请求读取同一快照时，确定性排序导致所有请求命中相同账号。
 func shuffleWithinSortGroups(accounts []accountWithLoad) {
+	shuffleWithinSortGroupsWithPreference(accounts, false)
+}
+
+func shuffleWithinSortGroupsWithPreference(accounts []accountWithLoad, preferOAuth bool) {
 	if len(accounts) <= 1 {
 		return
 	}
 	i := 0
 	for i < len(accounts) {
 		j := i + 1
-		for j < len(accounts) && sameAccountWithLoadGroup(accounts[i], accounts[j]) {
+		for j < len(accounts) && sameAccountWithLoadGroupWithPreference(accounts[i], accounts[j], preferOAuth) {
 			j++
 		}
 		if j-i > 1 {
@@ -3026,6 +3113,13 @@ func shuffleWithinSortGroups(accounts []accountWithLoad) {
 		}
 		i = j
 	}
+}
+
+func sameAccountWithLoadGroupWithPreference(a, b accountWithLoad, preferOAuth bool) bool {
+	if !sameAccountWithLoadGroup(a, b) {
+		return false
+	}
+	return accountPreferenceGroup(a.account, preferOAuth, nil) == accountPreferenceGroup(b.account, preferOAuth, nil)
 }
 
 // sameAccountWithLoadGroup 判断两个 accountWithLoad 是否属于同一排序组
@@ -3046,6 +3140,10 @@ func sameAccountWithLoadGroup(a, b accountWithLoad) bool {
 // - 先把同组账号按 (OAuth / 非 OAuth) 拆成两段，保持 OAuth 段在前；
 // - 再分别在各段内随机打散，避免热点。
 func shuffleWithinPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
+	shuffleWithinPriorityAndLastUsedWithPreference(accounts, preferOAuth, nil)
+}
+
+func shuffleWithinPriorityAndLastUsedWithPreference(accounts []*Account, preferOAuth bool, preferOAuthForAccount func(*Account) bool) {
 	if len(accounts) <= 1 {
 		return
 	}
@@ -3060,7 +3158,7 @@ func shuffleWithinPriorityAndLastUsed(accounts []*Account, preferOAuth bool) {
 				oauth := make([]*Account, 0, j-i)
 				others := make([]*Account, 0, j-i)
 				for _, acc := range accounts[i:j] {
-					if acc.Type == AccountTypeOAuth {
+					if accountPrefersOAuth(acc, preferOAuth, preferOAuthForAccount) {
 						oauth = append(oauth, acc)
 					} else {
 						others = append(others, acc)
@@ -3109,9 +3207,8 @@ func sameLastUsedAt(a, b *time.Time) bool {
 func (s *GatewayService) sortCandidatesForFallback(ctx context.Context, accounts []*Account, preferOAuth bool, mode string, key string) {
 	switch normalizeFallbackSelectionMode(mode) {
 	case SchedulerFallbackSelectionRandom:
-		// 先按优先级排序，然后在同优先级内随机打乱
-		sortAccountsByPriorityOnly(accounts, preferOAuth)
-		shuffleWithinPriority(accounts)
+		ordered := shuffleAccountsWithinPriority(accounts, preferOAuth)
+		copy(accounts, ordered)
 	case SchedulerFallbackSelectionRoundRobin:
 		ordered := buildRoundRobinAccountOrder(ctx, s, accounts, preferOAuth, key)
 		copy(accounts, ordered)
@@ -3126,39 +3223,24 @@ func (s *GatewayService) sortCandidatesForFallback(ctx context.Context, accounts
 
 // sortAccountsByPriorityOnly 仅按优先级排序
 func sortAccountsByPriorityOnly(accounts []*Account, preferOAuth bool) {
+	sortAccountsByPriorityOnlyWithPreference(accounts, preferOAuth, nil)
+}
+
+func sortAccountsByPriorityOnlyWithPreference(accounts []*Account, preferOAuth bool, preferOAuthForAccount func(*Account) bool) {
 	sort.SliceStable(accounts, func(i, j int) bool {
 		a, b := accounts[i], accounts[j]
 		if a.Priority != b.Priority {
 			return a.Priority < b.Priority
 		}
-		if preferOAuth && a.Type != b.Type {
-			return a.Type == AccountTypeOAuth
+		if preferOAuth {
+			aPreferred := accountPrefersOAuth(a, preferOAuth, preferOAuthForAccount)
+			bPreferred := accountPrefersOAuth(b, preferOAuth, preferOAuthForAccount)
+			if aPreferred != bPreferred {
+				return aPreferred
+			}
 		}
 		return false
 	})
-}
-
-// shuffleWithinPriority 在同优先级内随机打乱顺序
-func shuffleWithinPriority(accounts []*Account) {
-	if len(accounts) <= 1 {
-		return
-	}
-	r := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
-	start := 0
-	for start < len(accounts) {
-		priority := accounts[start].Priority
-		end := start + 1
-		for end < len(accounts) && accounts[end].Priority == priority {
-			end++
-		}
-		// 对 [start, end) 范围内的账户随机打乱
-		if end-start > 1 {
-			r.Shuffle(end-start, func(i, j int) {
-				accounts[start+i], accounts[start+j] = accounts[start+j], accounts[start+i]
-			})
-		}
-		start = end
-	}
 }
 
 // selectAccountForModelWithPlatform 选择单平台账户（完全隔离）
@@ -3229,7 +3311,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			}
 		}
 
-		var selected *Account
+		eligible := make([]*Account, 0, len(accounts))
 		for i := range accounts {
 			acc := &accounts[i]
 			if _, ok := routingSet[acc.ID]; !ok {
@@ -3264,30 +3346,15 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 				continue
 			}
-			if selected == nil {
-				selected = acc
-				continue
-			}
-			if acc.Priority < selected.Priority {
-				selected = acc
-			} else if acc.Priority == selected.Priority {
-				switch {
-				case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-					selected = acc
-				case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-					// keep selected (never used is preferred)
-				case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-					if preferOAuth && acc.Type != selected.Type && acc.Type == AccountTypeOAuth {
-						selected = acc
-					}
-				default:
-					if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-						selected = acc
-					}
-				}
-			}
+			eligible = append(eligible, acc)
 		}
 
+		cfg := s.schedulingConfig(ctx)
+		ordered := s.orderGatewayAccountCandidates(ctx, eligible, preferOAuth, cfg.FallbackSelectionMode, accountLoadRoundRobinKey("legacy_route", groupID, platform, requestedModel))
+		var selected *Account
+		if len(ordered) > 0 {
+			selected = ordered[0]
+		}
 		if selected != nil {
 			if sessionHash != "" && s.cache != nil {
 				if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.ID, stickySessionTTL); err != nil {
@@ -3343,7 +3410,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 	// needsUpstreamCheck 仅在主选择循环中使用；粘性会话命中时跳过此检查，
 	// 因为粘性会话优先保持连接一致性，且 upstream 计费基准极少使用。
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
-	var selected *Account
+	eligible := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
 		if _, excluded := excludedIDs[acc.ID]; excluded {
@@ -3378,28 +3445,13 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 			continue
 		}
-		if selected == nil {
-			selected = acc
-			continue
-		}
-		if acc.Priority < selected.Priority {
-			selected = acc
-		} else if acc.Priority == selected.Priority {
-			switch {
-			case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-				selected = acc
-			case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-				// keep selected (never used is preferred)
-			case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-				if preferOAuth && acc.Type != selected.Type && acc.Type == AccountTypeOAuth {
-					selected = acc
-				}
-			default:
-				if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-					selected = acc
-				}
-			}
-		}
+		eligible = append(eligible, acc)
+	}
+	cfg := s.schedulingConfig(ctx)
+	ordered := s.orderGatewayAccountCandidates(ctx, eligible, preferOAuth, cfg.FallbackSelectionMode, accountLoadRoundRobinKey("legacy", groupID, platform, requestedModel))
+	var selected *Account
+	if len(ordered) > 0 {
+		selected = ordered[0]
 	}
 
 	if selected == nil {
@@ -3485,7 +3537,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 			}
 		}
 
-		var selected *Account
+		eligible := make([]*Account, 0, len(accounts))
 		for i := range accounts {
 			acc := &accounts[i]
 			if _, ok := routingSet[acc.ID]; !ok {
@@ -3524,30 +3576,15 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 			if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 				continue
 			}
-			if selected == nil {
-				selected = acc
-				continue
-			}
-			if acc.Priority < selected.Priority {
-				selected = acc
-			} else if acc.Priority == selected.Priority {
-				switch {
-				case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-					selected = acc
-				case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-					// keep selected (never used is preferred)
-				case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-					if preferOAuth && acc.Platform == PlatformGemini && selected.Platform == PlatformGemini && acc.Type != selected.Type && acc.Type == AccountTypeOAuth {
-						selected = acc
-					}
-				default:
-					if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-						selected = acc
-					}
-				}
-			}
+			eligible = append(eligible, acc)
 		}
 
+		cfg := s.schedulingConfig(ctx)
+		ordered := s.orderGatewayMixedAccountCandidates(ctx, eligible, preferOAuth, cfg.FallbackSelectionMode, accountLoadRoundRobinKey("legacy_mixed_route", groupID, nativePlatform, requestedModel))
+		var selected *Account
+		if len(ordered) > 0 {
+			selected = ordered[0]
+		}
 		if selected != nil {
 			if sessionHash != "" && s.cache != nil {
 				if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.ID, stickySessionTTL); err != nil {
@@ -3600,7 +3637,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	// 3. 按优先级+最久未用选择（考虑模型支持和混合调度）
 	// needsUpstreamCheck 仅在主选择循环中使用；粘性会话命中时跳过此检查。
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
-	var selected *Account
+	eligible := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
 		if _, excluded := excludedIDs[acc.ID]; excluded {
@@ -3639,28 +3676,13 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 			continue
 		}
-		if selected == nil {
-			selected = acc
-			continue
-		}
-		if acc.Priority < selected.Priority {
-			selected = acc
-		} else if acc.Priority == selected.Priority {
-			switch {
-			case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
-				selected = acc
-			case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-				// keep selected (never used is preferred)
-			case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-				if preferOAuth && acc.Platform == PlatformGemini && selected.Platform == PlatformGemini && acc.Type != selected.Type && acc.Type == AccountTypeOAuth {
-					selected = acc
-				}
-			default:
-				if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-					selected = acc
-				}
-			}
-		}
+		eligible = append(eligible, acc)
+	}
+	cfg := s.schedulingConfig(ctx)
+	ordered := s.orderGatewayMixedAccountCandidates(ctx, eligible, preferOAuth, cfg.FallbackSelectionMode, accountLoadRoundRobinKey("legacy_mixed", groupID, nativePlatform, requestedModel))
+	var selected *Account
+	if len(ordered) > 0 {
+		selected = ordered[0]
 	}
 
 	if selected == nil {

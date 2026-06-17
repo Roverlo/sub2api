@@ -151,6 +151,26 @@ func rotateAccountCandidatesByOffset(items []openAIAccountCandidateScore, offset
 	return out
 }
 
+func accountPrefersOAuth(account *Account, preferOAuth bool, preferOAuthForAccount func(*Account) bool) bool {
+	if !preferOAuth || account == nil || account.Type != AccountTypeOAuth {
+		return false
+	}
+	return preferOAuthForAccount == nil || preferOAuthForAccount(account)
+}
+
+func accountPreferenceGroup(account *Account, preferOAuth bool, preferOAuthForAccount func(*Account) bool) string {
+	if !preferOAuth || account == nil {
+		return ""
+	}
+	if preferOAuthForAccount == nil {
+		return account.Type
+	}
+	if accountPrefersOAuth(account, preferOAuth, preferOAuthForAccount) {
+		return AccountTypeOAuth
+	}
+	return "_other"
+}
+
 func shuffleAccountCandidatesWithinPriority(items []openAIAccountCandidateScore) []openAIAccountCandidateScore {
 	ordered := append([]openAIAccountCandidateScore(nil), items...)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -189,13 +209,17 @@ func rotateAccountsByOffset(items []*Account, offset int) []*Account {
 }
 
 func shuffleAccountsWithinPriority(accounts []*Account, preferOAuth bool) []*Account {
+	return shuffleAccountsWithinPriorityPreference(accounts, preferOAuth, nil)
+}
+
+func shuffleAccountsWithinPriorityPreference(accounts []*Account, preferOAuth bool, preferOAuthForAccount func(*Account) bool) []*Account {
 	ordered := append([]*Account(nil), accounts...)
-	sortAccountsByPriorityOnly(ordered, preferOAuth)
+	sortAccountsByPriorityOnlyWithPreference(ordered, preferOAuth, preferOAuthForAccount)
 	for start := 0; start < len(ordered); {
 		end := start + 1
 		for end < len(ordered) &&
 			ordered[end].Priority == ordered[start].Priority &&
-			(!preferOAuth || ordered[end].Type == ordered[start].Type) {
+			accountPreferenceGroup(ordered[end], preferOAuth, preferOAuthForAccount) == accountPreferenceGroup(ordered[start], preferOAuth, preferOAuthForAccount) {
 			end++
 		}
 		if end-start > 1 {
@@ -360,10 +384,14 @@ func compareInt(a, b int) int {
 }
 
 func sameQuotaBalancedAccountGroup(a, b quotaBalancedAccount, preferOAuth bool) bool {
+	return sameQuotaBalancedAccountGroupWithPreference(a, b, preferOAuth, nil)
+}
+
+func sameQuotaBalancedAccountGroupWithPreference(a, b quotaBalancedAccount, preferOAuth bool, preferOAuthForAccount func(*Account) bool) bool {
 	if a.account.Priority != b.account.Priority {
 		return false
 	}
-	if preferOAuth && a.account.Type != b.account.Type {
+	if accountPreferenceGroup(a.account, preferOAuth, preferOAuthForAccount) != accountPreferenceGroup(b.account, preferOAuth, preferOAuthForAccount) {
 		return false
 	}
 	return sameQuotaBalancedKey(a.quota, b.quota)
@@ -432,6 +460,10 @@ func shuffleAccountLoadsWithinPriorityLoad(items []accountWithLoad, preferOAuth 
 }
 
 func buildQuotaBalancedAccountOrder(ctx context.Context, counter roundRobinCounter, accounts []*Account, preferOAuth bool, key string) []*Account {
+	return buildQuotaBalancedAccountOrderWithPreference(ctx, counter, accounts, preferOAuth, key, nil)
+}
+
+func buildQuotaBalancedAccountOrderWithPreference(ctx context.Context, counter roundRobinCounter, accounts []*Account, preferOAuth bool, key string, preferOAuthForAccount func(*Account) bool) []*Account {
 	if len(accounts) == 0 {
 		return nil
 	}
@@ -448,8 +480,12 @@ func buildQuotaBalancedAccountOrder(ctx context.Context, counter roundRobinCount
 		if a.account.Priority != b.account.Priority {
 			return a.account.Priority < b.account.Priority
 		}
-		if preferOAuth && a.account.Type != b.account.Type {
-			return a.account.Type == AccountTypeOAuth
+		if preferOAuth {
+			aPreferred := accountPrefersOAuth(a.account, preferOAuth, preferOAuthForAccount)
+			bPreferred := accountPrefersOAuth(b.account, preferOAuth, preferOAuthForAccount)
+			if aPreferred != bPreferred {
+				return aPreferred
+			}
 		}
 		if cmp := compareQuotaBalancedKey(a.quota, b.quota); cmp != 0 {
 			return cmp < 0
@@ -460,7 +496,7 @@ func buildQuotaBalancedAccountOrder(ctx context.Context, counter roundRobinCount
 	out := make([]*Account, 0, len(ordered))
 	for start := 0; start < len(ordered); {
 		end := start + 1
-		for end < len(ordered) && sameQuotaBalancedAccountGroup(ordered[start], ordered[end], preferOAuth) {
+		for end < len(ordered) && sameQuotaBalancedAccountGroupWithPreference(ordered[start], ordered[end], preferOAuth, preferOAuthForAccount) {
 			end++
 		}
 		group := rotateQuotaBalancedAccountsByOffset(ordered[start:end], nextRoundRobinOffset(ctx, counter, key, end-start))
@@ -539,17 +575,21 @@ func buildRoundRobinAccountLoadOrder(ctx context.Context, counter roundRobinCoun
 }
 
 func buildRoundRobinAccountOrder(ctx context.Context, counter roundRobinCounter, accounts []*Account, preferOAuth bool, key string) []*Account {
+	return buildRoundRobinAccountOrderWithPreference(ctx, counter, accounts, preferOAuth, key, nil)
+}
+
+func buildRoundRobinAccountOrderWithPreference(ctx context.Context, counter roundRobinCounter, accounts []*Account, preferOAuth bool, key string, preferOAuthForAccount func(*Account) bool) []*Account {
 	if len(accounts) == 0 {
 		return nil
 	}
 	ordered := append([]*Account(nil), accounts...)
-	sortAccountsByPriorityOnly(ordered, preferOAuth)
+	sortAccountsByPriorityOnlyWithPreference(ordered, preferOAuth, preferOAuthForAccount)
 	out := make([]*Account, 0, len(ordered))
 	for start := 0; start < len(ordered); {
 		end := start + 1
 		for end < len(ordered) &&
 			ordered[end].Priority == ordered[start].Priority &&
-			(!preferOAuth || ordered[end].Type == ordered[start].Type) {
+			accountPreferenceGroup(ordered[end], preferOAuth, preferOAuthForAccount) == accountPreferenceGroup(ordered[start], preferOAuth, preferOAuthForAccount) {
 			end++
 		}
 		group := ordered[start:end]
