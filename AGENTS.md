@@ -51,6 +51,45 @@ Pop-Location
 
 ## VPS 连接信息
 
+### 当前新 VPS（HNCloud，美国 CN2）
+
+- VPS 地址：`177.3.32.116`
+- SSH 端口：`20002`
+- SSH 用户：`root`
+- 本机私钥：`C:\Users\胡文雨\.ssh\sub2api_hncloud_177_3_32_116_ed25519`
+- 本机公钥：`C:\Users\胡文雨\.ssh\sub2api_hncloud_177_3_32_116_ed25519.pub`
+- 不要把私钥内容写入仓库、日志、Issue、PR 或聊天回复。文档中只允许引用本机路径。
+
+连接命令：
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\sub2api_hncloud_177_3_32_116_ed25519" -p 20002 root@177.3.32.116
+```
+
+当前新 VPS 已在 2026-06-28 完成并行部署验证：
+
+- 系统：Debian GNU/Linux 12，1 vCPU，约 `960MiB` 内存，`50G` 系统盘。
+- 已启用 `4G` swap，Docker、Docker Compose v2、Nginx 均已安装并设为开机自启。
+- 项目目录：`/opt/sub2api`
+- Compose 文件：`/opt/sub2api/docker-compose.yml`
+- Compose services：`sub2api`、`postgres`、`redis`
+- 当前容器：
+  - `sub2api`：镜像 `sub2api:ai-sdk-compat`，端口 `127.0.0.1:18080->8080/tcp`，应为 `healthy`
+  - `sub2api-postgres`：镜像 `postgres:18-alpine`，应为 `healthy`
+  - `sub2api-redis`：镜像 `redis:8-alpine`，应为 `healthy`
+- Nginx 当前只配置了 HTTP：`0.0.0.0:80` -> `http://127.0.0.1:18080`。
+- 公网临时验证入口：`http://177.3.32.116/health` 应返回 `{"status":"ok"}`。
+- 域名和 HTTPS 尚未切换；切换前不要停止旧 VPS。
+
+新 VPS 迁移验证快照（2026-06-28）：
+
+- `http://177.3.32.116/health` 返回 `200`。
+- `POST http://177.3.32.116/v1/v1/responses` 未带 API key 返回 `401 API_KEY_REQUIRED`，说明兼容兜底路由进入鉴权链路。
+- Postgres 迁移后关键计数：`74` 张 public 表，`accounts=3`，`api_keys=5`。
+- 新 VPS 出站访问 `https://api.openai.com/v1/models` 返回未带认证的 `401`，Anthropic 返回未带 API key 的 `401`，Gemini 返回未带 API key 的 `403`，说明地区和基础网络可进入 API 服务链路。
+
+### 旧 VPS（RackNerd/ColoCrossing，保留待切换）
+
 - VPS 地址：`192.3.89.62`
 - SSH 端口：`20002`
 - SSH 用户：`root`
