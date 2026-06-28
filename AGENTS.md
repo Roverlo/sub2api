@@ -67,10 +67,20 @@ ssh -i "$env:USERPROFILE\.ssh\sub2api_vps_ed25519" -p 20002 root@192.3.89.62
 代理连接经验：
 
 - 如果直连 SSH 出现 `Connection timed out during banner exchange`、`Timeout, server 192.3.89.62 not responding`，但本地 `ping` 或 `Test-NetConnection -Port 20002` 能通，不要先判断为密钥失效；这更可能是本机直连到 VPS SSH 端口的链路质量差。
-- 本机代理 `127.0.0.1:10808` 通常比直连稳定。远程检查、部署前健康检查、长命令执行和 `scp` 上传，优先通过代理 SSH。
+- `127.0.0.1:10808` 只是本机历史上常见的代理端口，不要无检查地直接使用。先确认代理是否开启、当前端口是否仍是 `10808`，再决定是否走代理 SSH。
+- 远程检查、部署前健康检查、长命令执行和 `scp` 上传，如果已确认本机代理可用，优先通过代理 SSH；如果代理未开启或端口不确定，先直连做轻量测试，仍不稳定时再询问用户当前代理端口。
 - 代理 SSH 可使用 Git for Windows 自带的 `connect.exe` 作为 OpenSSH `ProxyCommand`。常见路径：`C:\Program Files\Git\mingw64\bin\connect.exe`。
 
-代理 SSH 示例：
+代理可用性检查：
+
+```powershell
+$proxyPort = 10808
+Test-NetConnection -ComputerName 127.0.0.1 -Port $proxyPort -InformationLevel Quiet
+Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $proxyPort -State Listen -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress,LocalPort,OwningProcess
+```
+
+只有上述端口确实在监听时，再使用代理 SSH 示例：
 
 ```powershell
 $proxyCommand = '"C:\Progra~1\Git\mingw64\bin\connect.exe" -S 127.0.0.1:10808 %h %p'
@@ -89,7 +99,7 @@ scp -i "$env:USERPROFILE\.ssh\sub2api_vps_ed25519" -P 20002 `
   root@192.3.89.62:/opt/sub2api/backups/
 ```
 
-代理上传示例：
+确认代理端口监听后，可使用代理上传示例：
 
 ```powershell
 $proxyCommand = '"C:\Progra~1\Git\mingw64\bin\connect.exe" -S 127.0.0.1:10808 %h %p'
