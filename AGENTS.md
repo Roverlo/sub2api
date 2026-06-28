@@ -79,14 +79,17 @@ ssh -i "$env:USERPROFILE\.ssh\sub2api_hncloud_177_3_32_116_ed25519" -p 20002 roo
   - `sub2api-redis`：镜像 `redis:8-alpine`，应为 `healthy`
 - Nginx 当前监听 `80/443`，公网流量路径为 `Nginx 443/80` -> `http://127.0.0.1:18080` -> 容器 `8080`。
 - 当前公网入口：`https://luo-codex.260213.xyz`，Cloudflare DNS 为灰云 DNS-only，A 记录指向 `177.3.32.116`。
+- 当前公开设置里的 `api_base_url`、`frontend_url`、`balance_low_notify_recharge_url` 已切到 `luo-codex.260213.xyz`；如果首页 `window.__APP_CONFIG__` 仍出现 `codex.260213.xyz`，通常是应用设置缓存，重启 `sub2api` 应用容器即可刷新，不要重启数据库。
 - `http://luo-codex.260213.xyz/health` 应 `301` 跳转到 HTTPS，`https://luo-codex.260213.xyz/health` 应返回 `{"status":"ok"}`。
 - Let's Encrypt 证书名：`luo-codex.260213.xyz`，当前为 RSA 证书；后续排障可用 `certbot certificates -d luo-codex.260213.xyz` 复核。
+- Nginx 已对 `https://luo-codex.260213.xyz/assets/` 开启 `gzip` 和长期缓存，对 `/logo.png` 开启 7 天缓存；API 和普通页面仍保持 `proxy_buffering off`，避免影响流式接口。
 - 如果 443 突然无法访问或 Nginx 无法监听，先用 `ss -lntup | grep ':443'` 和 `docker ps` 检查是否有无关 Docker 服务占用了 443；确认业务归属前不要删除数据卷。
 
 新 VPS 迁移验证快照（2026-06-28）：
 
 - `http://177.3.32.116/health` 返回 `200`。
 - `https://luo-codex.260213.xyz/health` 返回 `200`；HTTP 会 `301` 跳转到 HTTPS。
+- 本机直连新 VPS 的 20 次 ping 快照：`0%` 丢包，平均约 `146ms`，范围约 `139-185ms`；`/health` HTTPS 总耗时约 `0.43-0.50s`。网页慢时优先区分网络链路、HTML 首包、静态资源压缩/缓存和浏览器缓存。
 - `POST http://177.3.32.116/v1/v1/responses` 未带 API key 返回 `401 API_KEY_REQUIRED`，说明兼容兜底路由进入鉴权链路。
 - `POST https://luo-codex.260213.xyz/v1/v1/responses` 未带 API key 返回 `401 API_KEY_REQUIRED`，说明 HTTPS 域名入口同样进入鉴权链路。
 - Postgres 迁移后关键计数：`74` 张 public 表，`accounts=3`，`api_keys=5`。
