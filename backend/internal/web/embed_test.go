@@ -541,6 +541,37 @@ func TestFrontendServer_Middleware(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
 	})
+
+	t.Run("returns_404_for_missing_asset_files", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+
+		assetPaths := []string{
+			"/assets/does-not-exist.js",
+			"/assets/does-not-exist.css",
+			"/logo-missing.png",
+			"/sw.js",
+		}
+
+		for _, path := range assetPaths {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				router.ServeHTTP(w, req)
+
+				assert.Equal(t, http.StatusNotFound, w.Code)
+				assert.NotContains(t, w.Header().Get("Content-Type"), "text/html")
+				assert.NotContains(t, w.Body.String(), "<!doctype html>")
+			})
+		}
+	})
 }
 
 func TestNewFrontendServer(t *testing.T) {
@@ -627,6 +658,32 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 				assert.Equal(t, http.StatusOK, w.Code)
 				assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+			})
+		}
+	})
+
+	t.Run("returns_404_for_missing_asset_files", func(t *testing.T) {
+		middleware := ServeEmbeddedFrontend()
+
+		router := gin.New()
+		router.Use(middleware)
+
+		assetPaths := []string{
+			"/assets/does-not-exist.js",
+			"/assets/does-not-exist.css",
+			"/manifest.json",
+			"/service-worker.js",
+		}
+
+		for _, path := range assetPaths {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				router.ServeHTTP(w, req)
+
+				assert.Equal(t, http.StatusNotFound, w.Code)
+				assert.NotContains(t, w.Header().Get("Content-Type"), "text/html")
+				assert.NotContains(t, w.Body.String(), "<!doctype html>")
 			})
 		}
 	})

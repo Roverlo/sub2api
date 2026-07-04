@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -98,7 +99,16 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		}
 
 		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+		if cleanPath == "index.html" {
+			s.serveIndexHTML(c)
+			return
+		}
+		if !s.fileExists(cleanPath) {
+			if isAssetRequest(cleanPath) {
+				c.String(http.StatusNotFound, "Frontend asset not found")
+				c.Abort()
+				return
+			}
 			s.serveIndexHTML(c)
 			return
 		}
@@ -277,6 +287,12 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
+		if isAssetRequest(cleanPath) {
+			c.String(http.StatusNotFound, "Frontend asset not found")
+			c.Abort()
+			return
+		}
+
 		serveIndexHTML(c, distFS)
 	}
 }
@@ -308,6 +324,27 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		trimmed == "/responses" ||
 		strings.HasPrefix(trimmed, "/responses/") ||
 		strings.HasPrefix(trimmed, "/images/")
+}
+
+func isAssetRequest(cleanPath string) bool {
+	cleanPath = strings.TrimPrefix(strings.TrimSpace(cleanPath), "/")
+	return strings.HasPrefix(cleanPath, "assets/") ||
+		cleanPath == "favicon.ico" ||
+		cleanPath == "manifest.json" ||
+		cleanPath == "manifest.webmanifest" ||
+		cleanPath == "robots.txt" ||
+		cleanPath == "sw.js" ||
+		cleanPath == "service-worker.js" ||
+		isStaticFileExtension(pathpkg.Ext(cleanPath))
+}
+
+func isStaticFileExtension(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".avif", ".css", ".gif", ".ico", ".jpeg", ".jpg", ".js", ".json", ".map", ".png", ".svg", ".txt", ".webmanifest", ".webp", ".woff", ".woff2":
+		return true
+	default:
+		return false
+	}
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {
