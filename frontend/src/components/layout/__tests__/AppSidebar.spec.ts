@@ -13,6 +13,9 @@ const routerSource = readFileSync(resolve(sourceRoot, 'router/index.ts'), 'utf8'
 const appSource = readFileSync(resolve(sourceRoot, 'App.vue'), 'utf8')
 const headerSource = readFileSync(resolve(sourceRoot, 'components/layout/AppHeader.vue'), 'utf8')
 const prefetchSource = readFileSync(resolve(sourceRoot, 'composables/useRoutePrefetch.ts'), 'utf8')
+const registerSource = readFileSync(resolve(sourceRoot, 'views/auth/RegisterView.vue'), 'utf8')
+const emailVerifySource = readFileSync(resolve(sourceRoot, 'views/auth/EmailVerifyView.vue'), 'utf8')
+const settingsSource = readFileSync(resolve(sourceRoot, 'views/admin/SettingsView.vue'), 'utf8')
 
 describe('redeem-only customer flow', () => {
   it('keeps redeem entry points and redirects retired subscription pages', () => {
@@ -28,6 +31,16 @@ describe('redeem-only customer flow', () => {
     expect(headerSource).not.toContain('SubscriptionProgressMini')
     expect(prefetchSource).not.toContain("'/admin/subscriptions':")
     expect(prefetchSource).toContain("'/admin/groups': ['/admin/redeem', '/admin/users']")
+  })
+
+  it('retires promo-code entry points and registration handling', () => {
+    expect(componentSource).not.toContain("{ path: '/admin/promo-codes', label:")
+    expect(routerSource).toMatch(/path: '\/admin\/promo-codes',[\s\S]*?redirect: '\/admin\/redeem'/)
+    expect(routerSource).not.toContain("name: 'AdminPromoCodes'")
+    expect(registerSource).not.toContain('validatePromoCode')
+    expect(registerSource).not.toContain('promo_code')
+    expect(emailVerifySource).not.toContain('promo_code')
+    expect(settingsSource).not.toContain('Toggle v-model="form.promo_code_enabled"')
   })
 })
 

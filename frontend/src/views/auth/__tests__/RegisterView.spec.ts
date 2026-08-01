@@ -2,14 +2,15 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RegisterView from '@/views/auth/RegisterView.vue'
 
-const { getPublicSettingsMock } = vi.hoisted(() => ({
-  getPublicSettingsMock: vi.fn()
+const { getPublicSettingsMock, registerMock } = vi.hoisted(() => ({
+  getPublicSettingsMock: vi.fn(),
+  registerMock: vi.fn()
 }))
 
 const publicSettings = {
   registration_enabled: true,
   email_verify_enabled: false,
-  promo_code_enabled: false,
+  promo_code_enabled: true,
   invitation_code_enabled: false,
   affiliate_enabled: true,
   turnstile_enabled: true,
@@ -25,7 +26,7 @@ const publicSettings = {
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ query: {} })
+  useRoute: () => ({ query: { promo: 'PROMO-URL' } })
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -41,7 +42,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 vi.mock('@/stores', () => ({
-  useAuthStore: () => ({ register: vi.fn() }),
+  useAuthStore: () => ({ register: (...args: unknown[]) => registerMock(...args) }),
   useAppStore: () => ({
     showError: vi.fn(),
     showSuccess: vi.fn(),
@@ -79,7 +80,9 @@ function mountRegister() {
 describe('RegisterView invitation layout', () => {
   beforeEach(() => {
     getPublicSettingsMock.mockReset()
+    registerMock.mockReset()
     getPublicSettingsMock.mockResolvedValue(publicSettings)
+    registerMock.mockResolvedValue({})
   })
 
   it('keeps the optional affiliate invitation field before Turnstile', async () => {
@@ -108,5 +111,28 @@ describe('RegisterView invitation layout', () => {
 
     expect(wrapper.find('[data-testid="affiliate-invitation-field"]').exists()).toBe(false)
     expect(wrapper.get('#invitation_code').exists()).toBe(true)
+  })
+
+  it('does not render or submit promo codes even when the backend setting is enabled', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings,
+      turnstile_enabled: false
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+
+    expect(wrapper.find('#promo_code').exists()).toBe(false)
+    await wrapper.get('#email').setValue('new@example.com')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledWith({
+      email: 'new@example.com',
+      password: 'secret-123',
+      turnstile_token: undefined,
+      invitation_code: undefined
+    })
   })
 })
