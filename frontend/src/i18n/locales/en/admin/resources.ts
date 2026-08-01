@@ -270,6 +270,8 @@ export default {
       batchUpdateTitle: 'Batch Update Redeem Codes',
       selectedCount: '{count} redeem code(s) selected',
       clearSelection: 'Clear selection',
+      copySelected: 'Copy selected codes',
+      selectedCopied: 'Selected redeem codes copied',
       selectCodesFirst: 'Select redeem codes first',
       noBatchFieldsSelected: 'Select at least one field to update',
       batchUpdateSuccess: 'Updated {count} redeem code(s)',

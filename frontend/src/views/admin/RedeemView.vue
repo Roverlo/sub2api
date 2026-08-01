@@ -221,6 +221,15 @@
               {{ t('admin.redeem.clearSelection') }}
             </button>
             <button
+              data-test="copy-selected-codes"
+              type="button"
+              class="btn btn-secondary btn-sm"
+              @click="copySelectedCodes"
+            >
+              <Icon name="copy" size="sm" class="mr-1" />
+              {{ t('admin.redeem.copySelected') }}
+            </button>
+            <button
               type="button"
               class="btn btn-primary btn-sm"
               @click="openBatchUpdateDialog"
@@ -791,6 +800,7 @@ const showDeleteUnusedDialog = ref(false)
 const showBatchUpdateDialog = ref(false)
 const deletingCode = ref<RedeemCode | null>(null)
 const copiedCode = ref<string | null>(null)
+const selectedCodeValues = ref<Map<number, string>>(new Map())
 
 const {
   selectedSet: selectedCodeIds,
@@ -798,12 +808,19 @@ const {
   allVisibleSelected,
   select,
   deselect,
-  clear: clearSelectedCodes,
+  clear: clearSelectedCodeIds,
   toggleVisible
 } = useTableSelection<RedeemCode>({
   rows: codes,
   getId: (code) => code.id
 })
+
+const selectedCodesText = computed(() => Array.from(selectedCodeValues.value.values()).join('\n'))
+
+const clearSelectedCodes = () => {
+  clearSelectedCodeIds()
+  selectedCodeValues.value = new Map()
+}
 
 const batchUpdateForm = reactive({
   update_status: false,
@@ -926,15 +943,30 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
 
 const toggleSelectRow = (id: number, event: Event) => {
   const target = event.target as HTMLInputElement
+  const nextValues = new Map(selectedCodeValues.value)
   if (target.checked) {
     select(id)
+    const code = codes.value.find((item) => item.id === id)
+    if (code) nextValues.set(id, code.code)
+    selectedCodeValues.value = nextValues
     return
   }
   deselect(id)
+  nextValues.delete(id)
+  selectedCodeValues.value = nextValues
 }
 
 const toggleSelectAllVisible = (event: Event) => {
   const target = event.target as HTMLInputElement
+  const nextValues = new Map(selectedCodeValues.value)
+  codes.value.forEach((code) => {
+    if (target.checked) {
+      nextValues.set(code.id, code.code)
+    } else {
+      nextValues.delete(code.id)
+    }
+  })
+  selectedCodeValues.value = nextValues
   toggleVisible(target.checked)
 }
 
@@ -1067,6 +1099,10 @@ const copyToClipboard = async (text: string) => {
   }
 }
 
+const copySelectedCodes = async () => {
+  await clipboardCopy(selectedCodesText.value, t('admin.redeem.selectedCopied'))
+}
+
 const handleExportCodes = async () => {
   try {
     const blob = await adminAPI.redeem.exportCodes(buildRedeemQueryFilters())
@@ -1101,6 +1137,7 @@ const confirmDelete = async () => {
     appStore.showSuccess(t('admin.redeem.codeDeleted'))
     showDeleteDialog.value = false
     deletingCode.value = null
+    clearSelectedCodes()
     loadCodes()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToDelete'))
@@ -1123,6 +1160,7 @@ const confirmDeleteUnused = async () => {
     const result = await adminAPI.redeem.batchDelete(unusedCodeIds)
     appStore.showSuccess(t('admin.redeem.codesDeleted', { count: result.deleted }))
     showDeleteUnusedDialog.value = false
+    clearSelectedCodes()
     loadCodes()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToDeleteUnused'))

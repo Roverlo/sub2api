@@ -277,6 +277,8 @@ export default {
       batchUpdateTitle: '批量修改兑换码',
       selectedCount: '已选择 {count} 个兑换码',
       clearSelection: '清空选择',
+      copySelected: '复制选中兑换码',
+      selectedCopied: '选中的兑换码已复制',
       selectCodesFirst: '请先选择兑换码',
       noBatchFieldsSelected: '请至少勾选一个要修改的字段',
       batchUpdateSuccess: '成功修改 {count} 个兑换码',

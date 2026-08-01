@@ -8,6 +8,28 @@ const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSi
 const componentSource = readFileSync(componentPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
+const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+const routerSource = readFileSync(resolve(sourceRoot, 'router/index.ts'), 'utf8')
+const appSource = readFileSync(resolve(sourceRoot, 'App.vue'), 'utf8')
+const headerSource = readFileSync(resolve(sourceRoot, 'components/layout/AppHeader.vue'), 'utf8')
+const prefetchSource = readFileSync(resolve(sourceRoot, 'composables/useRoutePrefetch.ts'), 'utf8')
+
+describe('redeem-only customer flow', () => {
+  it('keeps redeem entry points and redirects retired subscription pages', () => {
+    expect(componentSource).toContain("{ path: '/redeem'")
+    expect(componentSource).toContain("{ path: '/admin/redeem'")
+    expect(componentSource).not.toContain("{ path: '/subscriptions', label:")
+    expect(componentSource).not.toContain("{ path: '/admin/subscriptions', label:")
+    expect(routerSource).toMatch(/path: '\/subscriptions',[\s\S]*?redirect: '\/redeem'/)
+    expect(routerSource).toMatch(/path: '\/admin\/subscriptions',[\s\S]*?redirect: '\/admin\/redeem'/)
+    expect(appSource).not.toContain('subscriptionStore.fetchActiveSubscriptions')
+    expect(appSource).not.toContain('subscriptionStore.startPolling')
+    expect(appSource).toContain('subscriptionStore.clear()')
+    expect(headerSource).not.toContain('SubscriptionProgressMini')
+    expect(prefetchSource).not.toContain("'/admin/subscriptions':")
+    expect(prefetchSource).toContain("'/admin/groups': ['/admin/redeem', '/admin/users']")
+  })
+})
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {

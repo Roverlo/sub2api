@@ -3,11 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import RedeemView from '../RedeemView.vue'
 
-const { listRedeemCodes, batchUpdateRedeemCodes, getAllGroups, showSuccess, showError, showInfo } =
+const { listRedeemCodes, batchUpdateRedeemCodes, getAllGroups, copyToClipboard, showSuccess, showError, showInfo } =
   vi.hoisted(() => ({
     listRedeemCodes: vi.fn(),
     batchUpdateRedeemCodes: vi.fn(),
     getAllGroups: vi.fn(),
+    copyToClipboard: vi.fn(),
     showSuccess: vi.fn(),
     showError: vi.fn(),
     showInfo: vi.fn()
@@ -39,7 +40,7 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/composables/useClipboard', () => ({
   useClipboard: () => ({
-    copyToClipboard: vi.fn()
+    copyToClipboard
   })
 }))
 
@@ -107,6 +108,7 @@ describe('admin RedeemView batch update', () => {
     listRedeemCodes.mockReset()
     batchUpdateRedeemCodes.mockReset()
     getAllGroups.mockReset()
+    copyToClipboard.mockReset()
     showSuccess.mockReset()
     showError.mockReset()
     showInfo.mockReset()
@@ -143,6 +145,40 @@ describe('admin RedeemView batch update', () => {
     })
     batchUpdateRedeemCodes.mockResolvedValue({ updated: 1, message: 'ok' })
     getAllGroups.mockResolvedValue([])
+    copyToClipboard.mockResolvedValue(true)
+  })
+
+  it('copies selected redeem codes one per line', async () => {
+    const wrapper = mount(RedeemView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          Select: SelectStub,
+          GroupBadge: true,
+          GroupOptionItem: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    const checkboxes = wrapper.findAll('[data-test="select-code"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await wrapper.get('[data-test="copy-selected-codes"]').trigger('click')
+
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      'CODE-1\nCODE-2',
+      'admin.redeem.selectedCopied'
+    )
   })
 
   it('submits only checked fields for selected redeem codes', async () => {

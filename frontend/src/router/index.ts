@@ -290,15 +290,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/subscriptions',
-    name: 'Subscriptions',
-    component: () => import('@/views/user/SubscriptionsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'My Subscriptions',
-      titleKey: 'userSubscriptions.title',
-      descriptionKey: 'userSubscriptions.description'
-    }
+    redirect: '/redeem'
   },
   {
     path: '/purchase',
@@ -502,15 +494,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin/subscriptions',
-    name: 'AdminSubscriptions',
-    component: () => import('@/views/admin/SubscriptionsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Subscription Management',
-      titleKey: 'admin.subscriptions.title',
-      descriptionKey: 'admin.subscriptions.description'
-    }
+    redirect: '/admin/redeem'
   },
   {
     path: '/admin/accounts',
