@@ -1,0 +1,66 @@
+services:
+  sub2api:
+    mem_limit: 160m
+    memswap_limit: 160m
+    cpus: 0.60
+    oom_score_adj: 500
+    pids_limit: 256
+    environment:
+      - GOMEMLIMIT=128MiB
+      - LOG_OUTPUT_TO_FILE=false
+      - DATABASE_MAX_OPEN_CONNS=8
+      - DATABASE_MAX_IDLE_CONNS=2
+      - REDIS_POOL_SIZE=16
+      - REDIS_MIN_IDLE_CONNS=2
+    ports: !reset []
+    networks:
+      - sub2api-network
+      - caddy-network
+    logging: &low-resource-logging
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  postgres:
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.30
+    oom_score_adj: 500
+    pids_limit: 128
+    command:
+      - postgres
+      - -c
+      - max_connections=20
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - effective_cache_size=64MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - work_mem=1MB
+    logging: *low-resource-logging
+
+  redis:
+    mem_limit: 48m
+    memswap_limit: 48m
+    cpus: 0.10
+    oom_score_adj: 500
+    pids_limit: 64
+    command: >
+      sh -c '
+        exec redis-server \
+        --save 60 1 \
+        --appendonly yes \
+        --appendfsync everysec \
+        --maxmemory 16mb \
+        --maxmemory-policy noeviction \
+        --maxclients 64 \
+        ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}'
+    logging: *low-resource-logging
+
+networks:
+  caddy-network:
+    name: delivery-standardization_default
+    external: true
