@@ -25,14 +25,15 @@ type gatewayModelsResponseForTest struct {
 }
 
 type gatewayModelItemForTest struct {
-	ID                      string                                `json:"id"`
-	Object                  string                                `json:"object"`
-	Created                 int64                                 `json:"created"`
-	OwnedBy                 string                                `json:"owned_by"`
-	CreatedAt               string                                `json:"created_at"`
-	SupportsReasoningEffort bool                                  `json:"supportsReasoningEffort"`
-	ReasoningEffort         string                                `json:"reasoningEffort"`
-	ReasoningEfforts        []gatewayReasoningEffortOptionForTest `json:"reasoningEfforts"`
+	ID                       string                                `json:"id"`
+	Object                   string                                `json:"object"`
+	Created                  int64                                 `json:"created"`
+	OwnedBy                  string                                `json:"owned_by"`
+	CreatedAt                string                                `json:"created_at"`
+	SupportsReasoningEffort  bool                                  `json:"supportsReasoningEffort"`
+	ReasoningEffort          string                                `json:"reasoningEffort"`
+	ReasoningEfforts         []gatewayReasoningEffortOptionForTest `json:"reasoningEfforts"`
+	ReportedReasoningEfforts []string                              `json:"reasoning_efforts"`
 }
 
 type gatewayReasoningEffortOptionForTest struct {
@@ -236,6 +237,50 @@ func TestGatewayModels_CustomModelsListDisabledKeepsOriginalModels(t *testing.T)
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, []string{"gpt-5.4", "gpt-5.5"}, modelIDsForTest(got.Data))
+	require.Equal(t, []string{"none", "minimal", "low", "medium", "high", "xhigh"}, got.Data[0].ReportedReasoningEfforts)
+	require.Equal(t, []string{"none", "low", "medium", "high", "xhigh"}, got.Data[1].ReportedReasoningEfforts)
+}
+
+func TestGatewayModels_OpenAIAdvertisesModelSpecificReasoningEfforts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(2201)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{
+						ID:       1,
+						Platform: service.PlatformOpenAI,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gpt-5.6-sol":         "gpt-5.6-sol",
+								"gpt-5.3-codex-spark": "gpt-5.3-codex-spark",
+								"custom-model":        "custom-model",
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"custom-model", "gpt-5.3-codex-spark", "gpt-5.6-sol"}, modelIDsForTest(got.Data))
+	require.Empty(t, got.Data[0].ReportedReasoningEfforts)
+	require.Equal(t, []string{"minimal", "low", "medium", "high"}, got.Data[1].ReportedReasoningEfforts)
+	require.Equal(t, []string{"none", "low", "medium", "high", "xhigh", "max"}, got.Data[2].ReportedReasoningEfforts)
 }
 
 func TestGatewayModels_CustomModelsListFiltersAndOrdersMappedModels(t *testing.T) {
